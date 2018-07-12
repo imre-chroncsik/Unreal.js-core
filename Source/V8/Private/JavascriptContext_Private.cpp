@@ -1453,7 +1453,14 @@ public:
 			{
 				auto full_path = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*script_path);
 #if PLATFORM_WINDOWS
-				full_path = full_path.Replace(TEXT("/"), TEXT("\\"));
+				/*
+					this was causing problems for me when trying to debug with vscode, so removed it, at least temporarily. 
+					when adding a breakpoint, vscode sometimes (when the js was transpiled from ts?) sends a script path 
+					with forwards slashes to v8. so registering the script file with backslashes here makes v8 unable 
+					to resolve the breakpoint. 
+					see also the comments at Inspector.cpp, patchUrlRegexInFrontendMessageForVSCode(). 
+				*/
+//				full_path = full_path.Replace(TEXT("/"), TEXT("\\"));
 #endif
 				auto it = Self->Modules.Find(full_path);
 				if (it)
@@ -1467,6 +1474,7 @@ public:
 				if (FFileHelper::LoadFileToString(Text, *script_path))
 				{
 					Text = FString::Printf(TEXT("(function (global, __filename, __dirname) { var module = { exports : {}, filename : __filename }, exports = module.exports; (function () { %s\n })()\n;return module.exports;}(this,'%s', '%s'));"), *Text, *script_path, *FPaths::GetPath(script_path));
+
 					auto exports = Self->RunScript(full_path, Text, 0);
 					if (exports.IsEmpty())
 					{
@@ -1874,7 +1882,12 @@ public:
 		}
 #endif
 		auto source = V8_String(isolate(), Script);
-		auto path = V8_String(isolate(), LocalPathToURL(Path));
+
+		//	conversion to url removed, at least temporarily, to make debugging with vscode work. 
+		//	see the comments at Inspector.cpp:patchUrlRegexInFrontendMessageForVSCode(). 
+//		auto path = V8_String(isolate(), LocalPathToURL(Path));
+		auto path = V8_String(isolate(), Path);
+
 		ScriptOrigin origin(path, Integer::New(isolate(), -line_offset));
 		auto script = Script::Compile(source, &origin);
 		if (script.IsEmpty())

@@ -156,9 +156,57 @@ namespace {
 			{
 				chars.Add(buf[i]);
 			}
+			chars.Add(L'\0'); 
 
-			v8_inspector::StringView messageview((uint16_t*)chars.GetData(), len);
+			FString message(chars.GetData()); 
+			patchUrlRegexInFrontendMessageForVSCode(message); 
+			v8_inspector::StringView messageview((uint16_t*)(*message), message.Len());		
 			v8session->dispatchProtocolMessage(messageview);
+		}
+
+		/*
+			hack, should either be removed, or at least made configurable-optional. 
+			when adding a breakpoint, vscode sends a setBreakpointByUrl message, and passes to it a 
+			urlRegex that: 
+			*	has no "file:///" prefix
+			*	sometimes uses backslashes (i'm not sure about the exact conditions, to me it seemed
+				that backslashes are used when i add a breakpoint to a .js file, but forward slahes
+				when adding a breakpoint to a .ts file, probably somehow related to source maps?)
+			*	has some issues with re-escaping backslashes, so in the end the urlRegex can contain 
+				things like folder\\\\\\\\sub, or folder\\\\/sub. 
+			v8 is unable to find the script file by such a urlRegex. 
+			here we patch the urlRegex to use forward slashes. 
+			we do not add the "file:///" prefix, as that would confuse vscode; when stopping at a breakpoint, 
+			if v8 passed a prefixed url to vscode, then vscode would open the script source on a new tab 
+			as "node internal", instead of opening the original file. 
+			(this would also break any source mapping, eg. when running js that was transpiled from typescript.)
+			what we do instead is: 
+			*	convert to forward slashes here. 
+			*	remove the "file:///" prefix when registering a script file at v8, 
+				see RunScript() in JSContext_Private.cpp. 
+			*	do _not_ convert slashes to backslashes in the path when require'ing a file, 
+				see ExposeRequire() in JSContext_Private.cpp. 
+			this combination seems to work for both v8 and vscode. 
+		*/
+		void patchUrlRegexInFrontendMessageForVSCode(FString& message) { 
+			FString urlRegexKeyword = TEXT("\"urlRegex\""); 
+			auto urlRegexKeywordPos = message.Find(urlRegexKeyword); 
+			if (urlRegexKeywordPos < 0)
+				return; 
+			FString quote = TEXT("\""); 
+			auto urlRegexStartPos = message.Find(quote, ESearchCase::CaseSensitive, ESearchDir::FromStart, urlRegexKeywordPos + urlRegexKeyword.Len()); 
+			if (urlRegexStartPos < 0)
+				return; 
+			auto urlRegexEndPos = message.Find(quote, ESearchCase::CaseSensitive, ESearchDir::FromStart, urlRegexStartPos + 1); 
+			if (urlRegexEndPos < 0)
+				return; 
+			auto urlRegex = message.Mid(urlRegexStartPos, urlRegexEndPos - urlRegexStartPos + 1); 
+
+			urlRegex.ReplaceInline(TEXT("\\\\\\\\"), TEXT("\\\\/")); 
+			message = 
+				message.Mid(0, urlRegexStartPos) + 
+				urlRegex + 
+				message.Mid(urlRegexEndPos + 1); 
 		}
 
 		virtual void PostReceiveMessage() override
