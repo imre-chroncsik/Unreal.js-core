@@ -48,7 +48,7 @@ void UJavascriptComponent::Activate(bool bReset)
 
 	if (JavascriptContext)
 	{
-		JavascriptContext->RunFile(*ScriptSourceFile);
+		JavascriptContext->RunFileAsModule(*ScriptSourceFile);
 
 		SetComponentTickEnabled(OnTick.IsBound());	
 	}
