@@ -1826,7 +1826,7 @@ public:
 		return Text;
 	}
 
-	Local<Value> RunFile(const FString& Filename)
+	Local<Value> RunFile(const FString& Filename, bool makeModule)
 	{
 		HandleScope handle_scope(isolate());
 
@@ -1834,12 +1834,20 @@ public:
 
 		auto ScriptPath = GetScriptFileFullPath(Filename);
 		auto Text = FString::Printf(TEXT("(function (global,__filename,__dirname) { %s\n;}(this,'%s','%s'));"), *Script, *ScriptPath, *FPaths::GetPath(ScriptPath));
-		return RunScript(ScriptPath, Text, 0);
+		if (makeModule) 
+			Text = FString::Printf(TEXT("(function (global, __filename, __dirname) { var module = { exports : {}, filename : __filename }, exports = module.exports; (function () { %s\n })()\n;return module.exports;}(this,'%s', '%s'));"), *Script, *ScriptPath, *FPaths::GetPath(ScriptPath));
+		auto result = RunScript(ScriptPath, Text, 0);
+		if (makeModule) {
+			auto full_path = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*ScriptPath);
+			auto exports = result; 
+			Modules.Add(full_path, UniquePersistent<Value>(isolate(), exports));
+		}
+		return result; 
 	}
 
-	void Public_RunFile(const FString& Filename)
+	void Public_RunFile(const FString& Filename, bool makeModule)
 	{
-		RunFile(Filename);
+		RunFile(Filename, makeModule);
 	}
 
 	FString Public_RunScript(const FString& Script, bool bOutput = true)
