@@ -1875,6 +1875,7 @@ public:
 #endif
 		auto source = V8_String(isolate(), Script);
 		auto path = V8_String(isolate(), LocalPathToURL(Path));
+		UE_LOG(Javascript, Log, TEXT("RunScript(), path = %s"), *Path); 
 		ScriptOrigin origin(path, Integer::New(isolate(), -line_offset));
 		auto script = Script::Compile(source, &origin);
 		if (script.IsEmpty())

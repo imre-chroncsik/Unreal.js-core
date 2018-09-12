@@ -157,6 +157,11 @@ namespace {
 				chars.Add(buf[i]);
 			}
 
+			{
+				FString message(chars.GetData()); 
+				UE_LOG(Javascript, Log, TEXT("vsc -> ue: %s"), *message); 
+			}
+
 			v8_inspector::StringView messageview((uint16_t*)chars.GetData(), len);
 			v8session->dispatchProtocolMessage(messageview);
 		}
@@ -173,6 +178,11 @@ namespace {
 			TArray<uint16> str;
 			str.Append(view.characters16(), view.length());
 			str.Add(0);
+
+			{
+				FString fstr(str.GetData()); 
+				UE_LOG(Javascript, Log, TEXT("ue -> vsc: %s"), *fstr); 
+			}
 
 			// For platforms in where TCHAR is not 16 bit.
 			TArray<TCHAR> chars;
