@@ -801,7 +801,7 @@ public:
 		Isolate::Scope isolate_scope(isolate());
 		HandleScope handle_scope(isolate());
 
-		inspector = IJavascriptInspector::Create(Port, context());
+		inspector = IJavascriptInspector::Create(Port, this);
 	}
 
 	void DestroyInspector()
