@@ -40,6 +40,7 @@ typedef FTickableGameObject FTickableAnyObject;
 #include "Helpers.h"
 #include "Translator.h"
 #include "IV8.h"
+#include "JavascriptContext_Private.h"
 
 using namespace v8;
 
@@ -252,8 +253,7 @@ namespace {
 class FInspector : public IJavascriptInspector, public FTickableAnyObject, public v8_inspector::V8InspectorClient, public FOutputDevice
 {
 public:
-	Isolate* isolate_;
-	Persistent<Context> context_;
+	FJavascriptContext* jsContext_; 
 	bool terminated_{ false };
 	bool running_nested_loop_{ false };
 	std::unique_ptr<v8_inspector::V8Inspector> v8inspector;
@@ -273,32 +273,31 @@ public:
 		return FString::Printf(TEXT("chrome-devtools://devtools/bundled/inspector.html?experiments=true&v8only=true&ws=127.0.0.1:%d"), Port);
 	}
 
-	FInspector(v8::Platform* platform, int32 InPort, Local<Context> InContext)
-		: Port(InPort)
+	FInspector(v8::Platform* platform, int32 InPort, FJavascriptContext* JSContext)
+	: Port(InPort)
 	{
 		platform_ = platform;
-		isolate_ = InContext->GetIsolate();
-		context_.Reset(isolate_, InContext);
+		jsContext_ = JSContext; 
 
-		FIsolateHelper I(isolate_);
+		FIsolateHelper I(isolate());
 
 		{
-			auto console = InContext->Global()->Get(I.Keyword("console"));
-			InContext->Global()->Set(I.Keyword("$console"), console);
+			auto console = context()->Global()->Get(I.Keyword("console"));
+			context()->Global()->Set(I.Keyword("$console"), console);
 		}
 
-		v8inspector = v8_inspector::V8Inspector::create(InContext->GetIsolate(), this);
+		v8inspector = v8_inspector::V8Inspector::create(context()->GetIsolate(), this);
 		const uint8_t CONTEXT_NAME[] = "Unreal.js";
 		v8_inspector::StringView context_name(CONTEXT_NAME, sizeof(CONTEXT_NAME) - 1);
-		v8inspector->contextCreated(v8_inspector::V8ContextInfo(InContext, CONTEXT_GROUP_ID, context_name));
+		v8inspector->contextCreated(v8_inspector::V8ContextInfo(context(), CONTEXT_GROUP_ID, context_name));
 
 		Install(InPort);
 
 		{
-			Isolate::Scope isolate_scope(isolate_);
-			Context::Scope context_scope(InContext);
+			Isolate::Scope isolate_scope(isolate());
+			Context::Scope context_scope(context());
 
-			TryCatch try_catch(isolate_);
+			TryCatch try_catch(isolate());
 
 			auto source = TEXT("'log error warn info void assert'.split(' ').forEach(x => { let o = console[x].bind(console); let y = $console[x].bind($console); console['$'+x] = o; console[x] = function () { y(...arguments); return o(...arguments); }})");
 			auto script = v8::Script::Compile(I.String(source));
@@ -313,8 +312,6 @@ public:
 	~FInspector()
 	{
 		Uninstall();
-
-		context_.Reset();
 
 		UninstallRelay();
 	}
@@ -340,14 +337,14 @@ public:
 
 		if (Category != NAME_Javascript)
 		{
-			HandleScope handle_scope(isolate_);
+			HandleScope handle_scope(isolate());
 
-			FIsolateHelper I(isolate_);
+			FIsolateHelper I(isolate());
 
-			Isolate::Scope isolate_scope(isolate_);
+			Isolate::Scope isolate_scope(isolate());
 			Context::Scope context_scope(context());
 
-			TryCatch try_catch(isolate_);
+			TryCatch try_catch(isolate());
 
 			auto console = context()->Global()->Get(I.Keyword("console")).As<v8::Object>();
 
@@ -379,7 +376,8 @@ public:
 		delete this;
 	}
 
-	Local<Context> context() { return Local<v8::Context>::New(isolate_, context_); }
+	Isolate* isolate() { return jsContext_->isolate(); }
+	Local<Context> context() { return jsContext_->context(); }
 
 	void runMessageLoopOnPause(int context_group_id) override
 	{
@@ -390,7 +388,7 @@ public:
 		{
 			lws_service(WebSocketContext, 0);
 
-			while (v8::platform::PumpMessageLoop(platform_, isolate_))
+			while (v8::platform::PumpMessageLoop(platform_, isolate()))
 			{
 			}
 		}
@@ -409,7 +407,18 @@ public:
 	}
 
 	void runIfWaitingForDebugger(int contextGroupId) override
-	{}
+	{
+//		FString source = TEXT("$debuggerDidAttach()"); 
+//		auto result = jsContext_->Public_RunScript(source); 
+
+		FIsolateHelper I(isolate());
+		auto global = Local<Value>::Cast(context()->Global())->ToObject();
+		auto myFunction = global->Get(I.Keyword("$debuggerDidAttach")).As<v8::Function>();
+		if (!myFunction->IsNull()) { 
+			auto result = myFunction->Call(global, 0, nullptr); 
+		}
+
+	}
 
 	v8::Local<v8::Context> ensureDefaultContextInGroup(int) override
 	{
@@ -455,7 +464,7 @@ public:
 			BufferInfo->Channel = MakeShared<ChannelImpl>(
 				WebSocketContext,
 				Wsi,
-				isolate_,
+				isolate(),
 				platform_,
 				v8inspector
 			);
@@ -592,12 +601,12 @@ public:
 	}
 };
 
-IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, Local<Context> InContext)
+IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, FJavascriptContext* JSContext)
 {
-	return new FInspector(reinterpret_cast<v8::Platform*>(IV8::Get().GetV8Platform()), InPort, InContext);
+	return new FInspector(reinterpret_cast<v8::Platform*>(IV8::Get().GetV8Platform()), InPort, JSContext);
 }
 #else
-IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, Local<Context> InContext)
+IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, FJavascriptContext* JSContext)
 {
 	return nullptr;
 }
