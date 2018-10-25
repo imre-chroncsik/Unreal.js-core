@@ -38,11 +38,12 @@ struct IJavascriptDebugger
 	static IJavascriptDebugger* Create(int32 InPort, v8::Local<v8::Context> InContext);
 };
 
+struct FJavascriptContext; 
 struct IJavascriptInspector
 {
 	virtual ~IJavascriptInspector() {}
 
 	virtual void Destroy() = 0;
 
-	static IJavascriptInspector* Create(int32 InPort, v8::Local<v8::Context> InContext);
+	static IJavascriptInspector* Create(int32 InPort, FJavascriptContext* JSContext);
 };

@@ -51,6 +51,9 @@ public:
 	void RunFile(FString Filename);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	void RunFileAsModule(FString Filename);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	FString RunScript(FString Script, bool bOutput = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")

@@ -801,7 +801,7 @@ public:
 		Isolate::Scope isolate_scope(isolate());
 		HandleScope handle_scope(isolate());
 
-		inspector = IJavascriptInspector::Create(Port, context());
+		inspector = IJavascriptInspector::Create(Port, this);
 	}
 
 	void DestroyInspector()
@@ -1453,7 +1453,14 @@ public:
 			{
 				auto full_path = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*script_path);
 #if PLATFORM_WINDOWS
-				full_path = full_path.Replace(TEXT("/"), TEXT("\\"));
+				/*
+					this was causing problems for me when trying to debug with vscode, so removed it, at least temporarily. 
+					when adding a breakpoint, vscode sometimes (when the js was transpiled from ts?) sends a script path 
+					with forwards slashes to v8. so registering the script file with backslashes here makes v8 unable 
+					to resolve the breakpoint. 
+					see also the comments at Inspector.cpp, patchUrlRegexInFrontendMessageForVSCode(). 
+				*/
+//				full_path = full_path.Replace(TEXT("/"), TEXT("\\"));
 #endif
 				auto it = Self->Modules.Find(full_path);
 				if (it)
@@ -1467,6 +1474,7 @@ public:
 				if (FFileHelper::LoadFileToString(Text, *script_path))
 				{
 					Text = FString::Printf(TEXT("(function (global, __filename, __dirname) { var module = { exports : {}, filename : __filename }, exports = module.exports; (function () { %s\n })()\n;return module.exports;}(this,'%s', '%s'));"), *Text, *script_path, *FPaths::GetPath(script_path));
+
 					auto exports = Self->RunScript(full_path, Text, 0);
 					if (exports.IsEmpty())
 					{
@@ -1818,7 +1826,7 @@ public:
 		return Text;
 	}
 
-	Local<Value> RunFile(const FString& Filename)
+	Local<Value> RunFile(const FString& Filename, bool makeModule)
 	{
 		HandleScope handle_scope(isolate());
 
@@ -1826,12 +1834,20 @@ public:
 
 		auto ScriptPath = GetScriptFileFullPath(Filename);
 		auto Text = FString::Printf(TEXT("(function (global,__filename,__dirname) { %s\n;}(this,'%s','%s'));"), *Script, *ScriptPath, *FPaths::GetPath(ScriptPath));
-		return RunScript(ScriptPath, Text, 0);
+		if (makeModule) 
+			Text = FString::Printf(TEXT("(function (global, __filename, __dirname) { var module = { exports : {}, filename : __filename }, exports = module.exports; (function () { %s\n })()\n;return module.exports;}(this,'%s', '%s'));"), *Script, *ScriptPath, *FPaths::GetPath(ScriptPath));
+		auto result = RunScript(ScriptPath, Text, 0);
+		if (makeModule) {
+			auto full_path = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*ScriptPath);
+			auto exports = result; 
+			Modules.Add(full_path, UniquePersistent<Value>(isolate(), exports));
+		}
+		return result; 
 	}
 
-	void Public_RunFile(const FString& Filename)
+	void Public_RunFile(const FString& Filename, bool makeModule)
 	{
-		RunFile(Filename);
+		RunFile(Filename, makeModule);
 	}
 
 	FString Public_RunScript(const FString& Script, bool bOutput = true)
@@ -1874,7 +1890,12 @@ public:
 		}
 #endif
 		auto source = V8_String(isolate(), Script);
-		auto path = V8_String(isolate(), LocalPathToURL(Path));
+
+		//	conversion to url removed, at least temporarily, to make debugging with vscode work. 
+		//	see the comments at Inspector.cpp:patchUrlRegexInFrontendMessageForVSCode(). 
+//		auto path = V8_String(isolate(), LocalPathToURL(Path));
+		auto path = V8_String(isolate(), Path);
+
 		ScriptOrigin origin(path, Integer::New(isolate(), -line_offset));
 		auto script = Script::Compile(source, &origin);
 		if (script.IsEmpty())

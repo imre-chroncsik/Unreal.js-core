@@ -40,6 +40,7 @@ typedef FTickableGameObject FTickableAnyObject;
 #include "Helpers.h"
 #include "Translator.h"
 #include "IV8.h"
+#include "JavascriptContext_Private.h"
 
 using namespace v8;
 
@@ -156,9 +157,57 @@ namespace {
 			{
 				chars.Add(buf[i]);
 			}
+			chars.Add(L'\0'); 
 
-			v8_inspector::StringView messageview((uint16_t*)chars.GetData(), len);
+			FString message(chars.GetData()); 
+			patchUrlRegexInFrontendMessageForVSCode(message); 
+			v8_inspector::StringView messageview((uint16_t*)(*message), message.Len());		
 			v8session->dispatchProtocolMessage(messageview);
+		}
+
+		/*
+			hack, should either be removed, or at least made configurable-optional. 
+			when adding a breakpoint, vscode sends a setBreakpointByUrl message, and passes to it a 
+			urlRegex that: 
+			*	has no "file:///" prefix
+			*	sometimes uses backslashes (i'm not sure about the exact conditions, to me it seemed
+				that backslashes are used when i add a breakpoint to a .js file, but forward slahes
+				when adding a breakpoint to a .ts file, probably somehow related to source maps?)
+			*	has some issues with re-escaping backslashes, so in the end the urlRegex can contain 
+				things like folder\\\\\\\\sub, or folder\\\\/sub. 
+			v8 is unable to find the script file by such a urlRegex. 
+			here we patch the urlRegex to use forward slashes. 
+			we do not add the "file:///" prefix, as that would confuse vscode; when stopping at a breakpoint, 
+			if v8 passed a prefixed url to vscode, then vscode would open the script source on a new tab 
+			as "node internal", instead of opening the original file. 
+			(this would also break any source mapping, eg. when running js that was transpiled from typescript.)
+			what we do instead is: 
+			*	convert to forward slashes here. 
+			*	remove the "file:///" prefix when registering a script file at v8, 
+				see RunScript() in JSContext_Private.cpp. 
+			*	do _not_ convert slashes to backslashes in the path when require'ing a file, 
+				see ExposeRequire() in JSContext_Private.cpp. 
+			this combination seems to work for both v8 and vscode. 
+		*/
+		void patchUrlRegexInFrontendMessageForVSCode(FString& message) { 
+			FString urlRegexKeyword = TEXT("\"urlRegex\""); 
+			auto urlRegexKeywordPos = message.Find(urlRegexKeyword); 
+			if (urlRegexKeywordPos < 0)
+				return; 
+			FString quote = TEXT("\""); 
+			auto urlRegexStartPos = message.Find(quote, ESearchCase::CaseSensitive, ESearchDir::FromStart, urlRegexKeywordPos + urlRegexKeyword.Len()); 
+			if (urlRegexStartPos < 0)
+				return; 
+			auto urlRegexEndPos = message.Find(quote, ESearchCase::CaseSensitive, ESearchDir::FromStart, urlRegexStartPos + 1); 
+			if (urlRegexEndPos < 0)
+				return; 
+			auto urlRegex = message.Mid(urlRegexStartPos, urlRegexEndPos - urlRegexStartPos + 1); 
+
+			urlRegex.ReplaceInline(TEXT("\\\\\\\\"), TEXT("\\\\/")); 
+			message = 
+				message.Mid(0, urlRegexStartPos) + 
+				urlRegex + 
+				message.Mid(urlRegexEndPos + 1); 
 		}
 
 		virtual void PostReceiveMessage() override
@@ -252,8 +301,7 @@ namespace {
 class FInspector : public IJavascriptInspector, public FTickableAnyObject, public v8_inspector::V8InspectorClient, public FOutputDevice
 {
 public:
-	Isolate* isolate_;
-	Persistent<Context> context_;
+	FJavascriptContext* jsContext_; 
 	bool terminated_{ false };
 	bool running_nested_loop_{ false };
 	std::unique_ptr<v8_inspector::V8Inspector> v8inspector;
@@ -273,32 +321,31 @@ public:
 		return FString::Printf(TEXT("chrome-devtools://devtools/bundled/inspector.html?experiments=true&v8only=true&ws=127.0.0.1:%d"), Port);
 	}
 
-	FInspector(v8::Platform* platform, int32 InPort, Local<Context> InContext)
-		: Port(InPort)
+	FInspector(v8::Platform* platform, int32 InPort, FJavascriptContext* JSContext)
+	: Port(InPort)
 	{
 		platform_ = platform;
-		isolate_ = InContext->GetIsolate();
-		context_.Reset(isolate_, InContext);
+		jsContext_ = JSContext; 
 
-		FIsolateHelper I(isolate_);
+		FIsolateHelper I(isolate());
 
 		{
-			auto console = InContext->Global()->Get(I.Keyword("console"));
-			InContext->Global()->Set(I.Keyword("$console"), console);
+			auto console = context()->Global()->Get(I.Keyword("console"));
+			context()->Global()->Set(I.Keyword("$console"), console);
 		}
 
-		v8inspector = v8_inspector::V8Inspector::create(InContext->GetIsolate(), this);
+		v8inspector = v8_inspector::V8Inspector::create(context()->GetIsolate(), this);
 		const uint8_t CONTEXT_NAME[] = "Unreal.js";
 		v8_inspector::StringView context_name(CONTEXT_NAME, sizeof(CONTEXT_NAME) - 1);
-		v8inspector->contextCreated(v8_inspector::V8ContextInfo(InContext, CONTEXT_GROUP_ID, context_name));
+		v8inspector->contextCreated(v8_inspector::V8ContextInfo(context(), CONTEXT_GROUP_ID, context_name));
 
 		Install(InPort);
 
 		{
-			Isolate::Scope isolate_scope(isolate_);
-			Context::Scope context_scope(InContext);
+			Isolate::Scope isolate_scope(isolate());
+			Context::Scope context_scope(context());
 
-			TryCatch try_catch(isolate_);
+			TryCatch try_catch(isolate());
 
 			auto source = TEXT("'log error warn info void assert'.split(' ').forEach(x => { let o = console[x].bind(console); let y = $console[x].bind($console); console['$'+x] = o; console[x] = function () { y(...arguments); return o(...arguments); }})");
 			auto script = v8::Script::Compile(I.String(source));
@@ -313,8 +360,6 @@ public:
 	~FInspector()
 	{
 		Uninstall();
-
-		context_.Reset();
 
 		UninstallRelay();
 	}
@@ -340,14 +385,14 @@ public:
 
 		if (Category != NAME_Javascript)
 		{
-			HandleScope handle_scope(isolate_);
+			HandleScope handle_scope(isolate());
 
-			FIsolateHelper I(isolate_);
+			FIsolateHelper I(isolate());
 
-			Isolate::Scope isolate_scope(isolate_);
+			Isolate::Scope isolate_scope(isolate());
 			Context::Scope context_scope(context());
 
-			TryCatch try_catch(isolate_);
+			TryCatch try_catch(isolate());
 
 			auto console = context()->Global()->Get(I.Keyword("console")).As<v8::Object>();
 
@@ -379,7 +424,8 @@ public:
 		delete this;
 	}
 
-	Local<Context> context() { return Local<v8::Context>::New(isolate_, context_); }
+	Isolate* isolate() { return jsContext_->isolate(); }
+	Local<Context> context() { return jsContext_->context(); }
 
 	void runMessageLoopOnPause(int context_group_id) override
 	{
@@ -390,7 +436,7 @@ public:
 		{
 			lws_service(WebSocketContext, 0);
 
-			while (v8::platform::PumpMessageLoop(platform_, isolate_))
+			while (v8::platform::PumpMessageLoop(platform_, isolate()))
 			{
 			}
 		}
@@ -409,7 +455,18 @@ public:
 	}
 
 	void runIfWaitingForDebugger(int contextGroupId) override
-	{}
+	{
+//		FString source = TEXT("$debuggerDidAttach()"); 
+//		auto result = jsContext_->Public_RunScript(source); 
+
+		FIsolateHelper I(isolate());
+		auto global = Local<Value>::Cast(context()->Global())->ToObject();
+		auto myFunction = global->Get(I.Keyword("$debuggerDidAttach")).As<v8::Function>();
+		if (!myFunction->IsNull()) { 
+			auto result = myFunction->Call(global, 0, nullptr); 
+		}
+
+	}
 
 	v8::Local<v8::Context> ensureDefaultContextInGroup(int) override
 	{
@@ -455,7 +512,7 @@ public:
 			BufferInfo->Channel = MakeShared<ChannelImpl>(
 				WebSocketContext,
 				Wsi,
-				isolate_,
+				isolate(),
 				platform_,
 				v8inspector
 			);
@@ -592,12 +649,12 @@ public:
 	}
 };
 
-IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, Local<Context> InContext)
+IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, FJavascriptContext* JSContext)
 {
-	return new FInspector(reinterpret_cast<v8::Platform*>(IV8::Get().GetV8Platform()), InPort, InContext);
+	return new FInspector(reinterpret_cast<v8::Platform*>(IV8::Get().GetV8Platform()), InPort, JSContext);
 }
 #else
-IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, Local<Context> InContext)
+IJavascriptInspector* IJavascriptInspector::Create(int32 InPort, FJavascriptContext* JSContext)
 {
 	return nullptr;
 }

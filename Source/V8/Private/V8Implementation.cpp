@@ -134,6 +134,12 @@ void UJavascriptContext::RunFile(FString Filename)
 	JavascriptContext->Public_RunFile(Filename);
 }
 
+void UJavascriptContext::RunFileAsModule(FString Filename)
+{
+	bool makeModule = true; 
+	JavascriptContext->Public_RunFile(Filename, makeModule);
+}
+
 FString UJavascriptContext::RunScript(FString Script, bool bOutput)
 {
 	return JavascriptContext->Public_RunScript(Script, bOutput);	
