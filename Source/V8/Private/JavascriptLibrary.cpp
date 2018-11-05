@@ -908,8 +908,10 @@ FText UJavascriptLibrary::UpdateLocalizationText(const FJavascriptText& JText, c
 #endif
 }
 
+/*
 bool UJavascriptLibrary::RemoveDisplayString(FJavascriptText& JavascriptText)
 {
 	auto DisplayString = FTextInspector::GetSharedDisplayString(JavascriptText.Handle);
 	return FTextLocalizationManager::Get().RemoveDisplayString(DisplayString);
 }
+*/
