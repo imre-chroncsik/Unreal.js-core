@@ -456,16 +456,17 @@ public:
 
 	void runIfWaitingForDebugger(int contextGroupId) override
 	{
-//		FString source = TEXT("$debuggerDidAttach()"); 
-//		auto result = jsContext_->Public_RunScript(source); 
-
+		HandleScope handle_scope(isolate());
 		FIsolateHelper I(isolate());
 		auto global = Local<Value>::Cast(context()->Global())->ToObject();
-		auto myFunction = global->Get(I.Keyword("$debuggerDidAttach")).As<v8::Function>();
-		if (!myFunction->IsNull()) { 
-			auto result = myFunction->Call(global, 0, nullptr); 
-		}
-
+		auto myFunctionValueMaybe = global->Get(context(), I.Keyword("$debuggerDidAttach"));
+		if (myFunctionValueMaybe.IsEmpty())
+			return; 
+		auto myFunctionValue = myFunctionValueMaybe.ToLocalChecked(); 
+		if (myFunctionValue->IsNullOrUndefined())
+			return; 
+		auto myFunction = myFunctionValue.As<v8::Function>(); 
+		auto result = myFunction->Call(context(), global, 0, nullptr); 
 	}
 
 	v8::Local<v8::Context> ensureDefaultContextInGroup(int) override
@@ -631,7 +632,7 @@ public:
 		Info.extensions = NULL;
 		Info.gid = -1;
 		Info.uid = -1;
-		Info.options = 0;
+		Info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 		// tack on this object.
 		Info.user = this;
 		WebSocketContext = lws_create_context(&Info);
