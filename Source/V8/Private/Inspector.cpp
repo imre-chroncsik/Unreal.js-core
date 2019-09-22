@@ -150,7 +150,7 @@ namespace {
 			FUTF8ToTCHAR unicode((char*)str.GetData());
 
 			// For platforms in where TCHAR is not 16 bit.
-			TArray<uint16> chars;
+			TArray<TCHAR> chars;
 			auto* buf = unicode.Get();
 			auto len = unicode.Length();
 			for (decltype(len) i=0; i<len; ++i)
@@ -159,7 +159,7 @@ namespace {
 			}
 			chars.Add(L'\0'); 
 
-			FString message(chars.GetData()); 
+			FString message(chars.GetData());
 			patchUrlRegexInFrontendMessageForVSCode(message); 
 			v8_inspector::StringView messageview((uint16_t*)(*message), message.Len());		
 			v8session->dispatchProtocolMessage(messageview);
