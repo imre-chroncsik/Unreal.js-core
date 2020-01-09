@@ -1,179 +1,112 @@
-#include "SJavascriptGraphEdNode.h"
+﻿#include "SJavascriptGraphEdNode.h"
 #include "SJavascriptGraphEdNodePin.h"
 
-#include "JavascriptGraphEdNode.h"
-#include "JavascriptGraphAssetGraphSchema.h"
-#include "SlateOptMacros.h"
-#include "Widgets/Layout/SBox.h"
+#include "Blueprint/UserWidget.h"
+#include "Components/VerticalBox.h"
 #include "Framework/Application/SlateApplication.h"
+#include "JavascriptGraphAssetGraphSchema.h"
+#include "JavascriptGraphEdNode.h"
+#include "JavascriptUMG/JavascriptUMGLibrary.h"
+#include "SCommentBubble.h"
+#include "SlateOptMacros.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SWindow.h"
-#include "Widgets/Images/SImage.h"
-#include "SCommentBubble.h"
+
+TSharedRef<FDragJavascriptGraphNode> FDragJavascriptGraphNode::New(const TSharedRef<SGraphNode>& InDraggedNode)
+{
+	TSharedRef<FDragJavascriptGraphNode> Operation = MakeShareable(new FDragJavascriptGraphNode);
+	Operation->DraggedNodes.Add(InDraggedNode);
+	Operation->Construct();
+	return Operation;
+}
+
+void FDragJavascriptGraphNode::HoverTargetChanged()
+{
+	TArray<FPinConnectionResponse> UniqueMessages;
+	UEdGraphNode* TargetNodeObj = GetHoveredNode();
+
+	if (TargetNodeObj != NULL)
+	{
+		TSharedRef<SVerticalBox> FeedbackBox = SNew(SVerticalBox);
+		const FSlateBrush* StatusSymbol = NULL;
+		const FText Message = FText::FromString(TEXT("TEST"));
+
+		StatusSymbol = FEditorStyle::GetBrush(TEXT("Graph.ConnectorFeedback.OK"));
+		// StatusSymbol = FEditorStyle::GetBrush(TEXT("Graph.ConnectorFeedback.Error"));
+		FeedbackBox->AddSlot()
+			.AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(3.0f)
+				[
+					SNew(SImage).Image(StatusSymbol)
+				]
+			];
+
+		FeedbackBox->AddSlot()
+			.AutoHeight()
+			[
+				DraggedNodes[0]
+			];
+
+		SetFeedbackMessage(FeedbackBox);
+	}
+	else
+	{
+		SetSimpleFeedbackMessage(
+			FEditorStyle::GetBrush(TEXT("Graph.ConnectorFeedback.Error")),
+			FLinearColor::White,
+			NSLOCTEXT("GraphEditor.Feedback", "DragNode", "This node cannot be placed here."));
+	}
+}
+
+UJavascriptGraphEdNode * FDragJavascriptGraphNode::GetDropTargetNode() const
+{
+	return Cast<UJavascriptGraphEdNode>(GetHoveredNode());
+}
 
 void SJavascriptGraphEdNode::Construct(const FArguments& InArgs, UJavascriptGraphEdNode* InNode)
 {
 	GraphNode = InNode;
 	// SetCursor(EMouseCursor::CardinalCross);
 	UpdateGraphNode();
+
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	if(GraphEdNode)
+	{
+		GraphEdNode->OnWidgetFinalized.ExecuteIfBound();
+	}
 }
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 void SJavascriptGraphEdNode::UpdateGraphNode()
 {
+	// Reset variables that are going to be exposed, in case we are refreshing an already setup node.
 	InputPins.Empty();
 	OutputPins.Empty();
-
-	// Reset variables that are going to be exposed, in case we are refreshing an already setup node.
 	RightNodeBox.Reset();
-	LeftNodeBox.Reset();	
+	LeftNodeBox.Reset();
 	
-	TSharedPtr<SWidget> UserWidget = SNew(SBox);
-	TSharedPtr<SWidget> TitleAreaWidget = SNew(SBox);
-	TSharedPtr<SWidget> ErrorReportingWidget = SNew(SBox);
-
-
-	TSharedPtr<SWidget> LeftNodeBoxWidget = SAssignNew(LeftNodeBox, SVerticalBox);
-	TSharedPtr<SWidget> RightNodeBoxWidget = SAssignNew(RightNodeBox, SVerticalBox);
-
 	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
 	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
-
-	TSharedPtr<SWidget> AltLeftNodeBoxWidget = Schema->OnUsingAlternativeInputPinBox.IsBound()
-		? TSharedPtr<SWidget>(SAssignNew(AltLeftNodeBox, SVerticalBox))
-		: nullptr;
-	TSharedPtr<SWidget> AltRightNodeBoxWidget = Schema->OnUsingAlternativeOutputPinBox.IsBound()
-		? TSharedPtr<SWidget>(SAssignNew(AltRightNodeBox, SVerticalBox))
-		: nullptr;
-
+	
 	GraphEdNode->BackgroundColor = FLinearColor::Black;
 
-	if (GraphEdNode)
-	{
-		if (Schema->OnTakeWidget.IsBound())
-		{
-			auto Widget = Schema->OnTakeWidget.Execute(GraphEdNode).Widget;
-			if (Widget.IsValid())
-			{
-				UserWidget = Widget;
-			}
-		}
-
-		if (Schema->OnTakeTitleWidget.IsBound())
-		{
-			auto Widget = Schema->OnTakeTitleWidget.Execute(GraphEdNode).Widget;
-			if (Widget.IsValid())
-			{
-				TitleAreaWidget = Widget;
-			}
-		}
-
-		if (Schema->OnTakeErrorReportingWidget.IsBound())
-		{
-			auto Widget = Schema->OnTakeErrorReportingWidget.Execute(GraphEdNode).Widget;
-			if (Widget.IsValid())
-			{
-				ErrorReportingWidget = Widget;
-			}
-		}
-	}
-
-	// default style
-	const FMargin NodePadding = FMargin(2.0f);	
-	TSharedPtr<SWidget> ContentWidget = SNew(SHorizontalBox)
-		// INPUT PIN AREA
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		[
-			SNew(SBox)
-			.MinDesiredHeight(NodePadding.Top)
-			[
-				LeftNodeBoxWidget.ToSharedRef()
-			]
-		]
-		// STATE NAME AREA
-		+ SHorizontalBox::Slot()
-			.Padding(FMargin(NodePadding.Left, 0.0f, NodePadding.Right, 0.0f))
-			[
-				UserWidget.ToSharedRef()
-			]
-		// OUTPUT PIN AREA
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		[
-			SNew(SBox)
-			.MinDesiredHeight(NodePadding.Bottom)
-			[
-				RightNodeBoxWidget.ToSharedRef()
-			]
-		];
-	
-
-	if (GraphEdNode)
-	{
-		if (Schema->OnTakeCustomContentWidget.IsBound())
-		{
-			FJavascriptSlateWidget OutUserWidget;
-			FJavascriptSlateWidget OutLeftNodeBoxWidget;
-			FJavascriptSlateWidget OutRightNodeBoxWidget;
-			FJavascriptSlateWidget OutAltLeftNodeBoxWidget;
-			FJavascriptSlateWidget OutAltRightNodeBoxWidget;
-
-			OutUserWidget.Widget = UserWidget;
-			OutLeftNodeBoxWidget.Widget = LeftNodeBoxWidget;
-			OutRightNodeBoxWidget.Widget = RightNodeBoxWidget;
-			OutAltLeftNodeBoxWidget.Widget = AltLeftNodeBoxWidget;
-			OutAltRightNodeBoxWidget.Widget = AltRightNodeBoxWidget;
-
-			auto CustomContentWidget = Schema->OnTakeCustomContentWidget.Execute(GraphEdNode, OutUserWidget, OutLeftNodeBoxWidget, OutRightNodeBoxWidget, OutAltLeftNodeBoxWidget, OutAltRightNodeBoxWidget).Widget;
-			if (CustomContentWidget.IsValid())
-			{
-				ContentWidget = CustomContentWidget;
-			}
-		}
-	}
-
 	this->ContentScale.Bind(this, &SGraphNode::GetContentScale);
+
 	this->GetOrAddSlot(ENodeZone::Center)
 		.HAlign(HAlign_Fill)
-		.VAlign(VAlign_Center)
-		[
-			SNew(SBorder)
-			.BorderImage(FEditorStyle::GetBrush("Graph.StateNode.Body"))
-			.Padding(0.0f)
-			.BorderBackgroundColor(GraphEdNode->BackgroundColor)
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()		
-					.AutoHeight()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Top)
-					[
-						TitleAreaWidget.ToSharedRef()
-					]
-				+ SVerticalBox::Slot()
-					.AutoHeight()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Fill)
-					[
-						ContentWidget.ToSharedRef()
-					]
-				+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(1.0f)
-					[
-						ErrorReportingWidget.ToSharedRef()
-					]
-			]
-		];
-
-	this->GetOrAddSlot( ENodeZone::Center )
-		.HAlign(HAlign_Center)
-		.VAlign(VAlign_Center)
+		.VAlign(VAlign_Fill)
 		[
 			SNew(SVerticalBox)
 			+SVerticalBox::Slot()
 			.AutoHeight()
+			.HAlign(HAlign_Fill)
+			.VAlign(VAlign_Fill)
 			[
 				SNew(SOverlay)
 				+SOverlay::Slot()
@@ -191,33 +124,24 @@ void SJavascriptGraphEdNode::UpdateGraphNode()
 						.HAlign(HAlign_Fill)
 						.VAlign(VAlign_Top)
 						[
-							TitleAreaWidget.ToSharedRef()
+							GetTitleAreaWidget().ToSharedRef()
 						]
 					+ SVerticalBox::Slot()
 						.AutoHeight()
 						.HAlign(HAlign_Fill)
 						.VAlign(VAlign_Fill)
 						[
-							ContentWidget.ToSharedRef()
+							GetContentWidget().ToSharedRef()
 						]
 					+ SVerticalBox::Slot()
 						.AutoHeight()
 						.Padding(1.0f)
 						[
-							ErrorReportingWidget.ToSharedRef()
+							ErrorReportingWidget().ToSharedRef()
 						]
 				]
 			]			
 		];
-
-	if (GraphEdNode && Schema->OnGetNodeComment.IsBound())
-	{
-		FText Text = Schema->OnGetNodeComment.Execute(GraphEdNode);
-		if (Text.IsEmpty() == false)
-		{
-			GetNodeObj()->bCommentBubbleVisible = true;
-		}
-	}
 
 	TSharedPtr<SCommentBubble> CommentBubble;
 	const FSlateColor CommentColor = GetDefault<UGraphEditorSettings>()->DefaultCommentNodeTitleColor;
@@ -233,7 +157,7 @@ void SJavascriptGraphEdNode::UpdateGraphNode()
 		.GraphLOD(this, &SGraphNode::GetCurrentLOD)
 		.IsGraphNodeHovered(this, &SGraphNode::IsHovered);
 
-	GetOrAddSlot(ENodeZone::TopCenter)
+	this->GetOrAddSlot(ENodeZone::TopCenter)
 		.SlotOffset(TAttribute<FVector2D>(CommentBubble.Get(), &SCommentBubble::GetOffset))
 		.SlotSize(TAttribute<FVector2D>(CommentBubble.Get(), &SCommentBubble::GetSize))
 		.AllowScaling(TAttribute<bool>(CommentBubble.Get(), &SCommentBubble::IsScalingAllowed))
@@ -241,33 +165,144 @@ void SJavascriptGraphEdNode::UpdateGraphNode()
 		[
 			CommentBubble.ToSharedRef()
 		];
-	
+
 	CreatePinWidgets();
-	// CreateInputSideAddButton(LeftNodeBox);
 	CreateOutputSideAddButton(RightNodeBox);
+
+	GraphEdNode->SlateGraphNode = SharedThis(this);
+}
+
+TSharedPtr<SWidget> SJavascriptGraphEdNode::GetTitleAreaWidget()
+{
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	if (Schema->OnTakeTitleAreaWidget.IsBound())
+	{
+		UWidget* Widget = Schema->OnTakeTitleAreaWidget.Execute(GraphEdNode);
+		if (Widget)
+		{
+			return Widget->TakeWidget();
+		}
+	}
+	return SNew(SBox);
+}
+
+TSharedPtr<SWidget> SJavascriptGraphEdNode::GetUserWidget()
+{
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	if (Schema->OnTakeUserWidget.IsBound())
+	{
+		UWidget* Widget = Schema->OnTakeUserWidget.Execute(GraphEdNode);
+		if (Widget)
+		{
+			return Widget->TakeWidget();
+		}
+	}
+	return SNew(SBox);
+}
+
+TSharedPtr<SWidget> SJavascriptGraphEdNode::GetContentWidget()
+{
+	TSharedPtr<SWidget> LeftNodeBoxWidget = SAssignNew(LeftNodeBox, SVerticalBox);
+	TSharedPtr<SWidget> RightNodeBoxWidget = SAssignNew(RightNodeBox, SVerticalBox);
+
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	if (GraphEdNode)
+	{
+		if (Schema->OnTakeContentWidget.IsBound())
+		{
+			FJavascriptSlateWidget OutLeftNodeBoxWidget;
+			FJavascriptSlateWidget OutRightNodeBoxWidget;
+			OutLeftNodeBoxWidget.Widget = LeftNodeBoxWidget;
+			OutRightNodeBoxWidget.Widget = RightNodeBoxWidget;
+
+			auto ContentWidget = Schema->OnTakeContentWidget.Execute(GraphEdNode, OutLeftNodeBoxWidget, OutRightNodeBoxWidget).Widget;
+			if (ContentWidget.IsValid())
+			{
+				return ContentWidget;
+			}
+		}
+	}
+
+	// default style
+	const FMargin NodePadding = FMargin(2.0f);
+	return SNew(SHorizontalBox)
+		// INPUT PIN AREA
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+			.MinDesiredHeight(NodePadding.Top)
+		[
+			LeftNodeBoxWidget.ToSharedRef()
+		]
+		]
+		// STATE NAME AREA
+		+ SHorizontalBox::Slot()
+		.Padding(FMargin(NodePadding.Left, 0.0f, NodePadding.Right, 0.0f))
+		[
+			GetUserWidget().ToSharedRef()
+		]
+		// OUTPUT PIN AREA
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+			.MinDesiredHeight(NodePadding.Bottom)
+		[
+			RightNodeBoxWidget.ToSharedRef()
+		]
+	];
+}
+
+TSharedPtr<SWidget> SJavascriptGraphEdNode::ErrorReportingWidget()
+{
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	if (Schema->OnTakeErrorReportingWidget.IsBound())
+	{
+		UWidget* Widget = Schema->OnTakeErrorReportingWidget.Execute(GraphEdNode);
+		if (Widget)
+		{
+			return Widget->TakeWidget();
+		}
+	}
+	return SNew(SBox);
 }
 
 void SJavascriptGraphEdNode::CreatePinWidgets()
 {
 	UJavascriptGraphEdNode* GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
 
-	// @todo:
-	GraphEdNode->SlateGraphNode = this;
-	
+	// Custom node currently does not support pin functionality.
+	// Actually, only creating and adding pin widgets to pin box is available.
+	// But connecting, drawing connection and other is not.
+	// This limitation comes from the fact that we didn't add this node widget to a SGraphPanel
+	// like any other implementation of sub-nodes, e.g. Decorator/Service of SGraphNode_BehaviorTree.
+	if (GraphEdNode->IsCustomNode)
+	{
+		return;
+	}
+
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphEdNode->GetSchema());
 
 	for (int32 PinIdx = 0; PinIdx < GraphEdNode->Pins.Num(); PinIdx++)
 	{
 		UEdGraphPin* MyPin = GraphEdNode->Pins[PinIdx];
 		if (!MyPin->bHidden)
 		{
-			TSharedPtr<SGraphPin> NewPin;
+			TSharedPtr<SGraphPin> NewPin = nullptr;
 
-			/*auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
 			if (Schema->OnCreatePin.IsBound())
 			{
-				NewPin = StaticCastSharedPtr<SGraphPin>(Schema->OnCreatePin.Execute(FJavascriptEdGraphPin{ MyPin }).Widget);
-			}*/
-			
+				UWidget* Widget = Schema->OnCreatePin.Execute(FJavascriptEdGraphPin{ MyPin });
+				if (Widget)
+				{
+					NewPin = StaticCastSharedPtr<SGraphPin>(TSharedPtr<SWidget>(Widget->TakeWidget()));
+				}
+			}
 			if (!NewPin.IsValid())
 			{
 				NewPin = SNew(SJavascriptGraphPin, MyPin);
@@ -298,15 +333,18 @@ void SJavascriptGraphEdNode::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		bDisable = Schema->OnUsingDefaultPin.Execute(JavascriptGraphPin);
 	}
 
+	TSharedPtr<SVerticalBox> NodeBox;
+
+	if (Schema->OnGetCustomPinBoxWidget.IsBound())
+	{
+		NodeBox = StaticCastSharedPtr<SVerticalBox>(Schema->OnGetCustomPinBoxWidget.Execute(JavascriptGraphPin).Widget);
+	}
+
 	if (PinToAdd->GetDirection() == EEdGraphPinDirection::EGPD_Input)
 	{
-		TSharedPtr<SVerticalBox> NodeBox = LeftNodeBox;
-
-		if (Schema->OnUsingAlternativeInputPinBox.IsBound() &&
-			Schema->OnUsingAlternativeInputPinBox.Execute(JavascriptGraphPin) &&
-			AltLeftNodeBox.IsValid())
+		if (NodeBox.IsValid() == false)
 		{
-			NodeBox = AltLeftNodeBox;
+			NodeBox = LeftNodeBox;
 		}
 
 		if (bDisable)
@@ -326,27 +364,22 @@ void SJavascriptGraphEdNode::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 				[
 					PinToAdd
 				];
-
 		}
 		InputPins.Add(PinToAdd);
 	}
 	else // Direction == EEdGraphPinDirection::EGPD_Output
 	{
-		TSharedPtr<SVerticalBox> NodeBox = RightNodeBox;
-
-		if (Schema->OnUsingAlternativeOutputPinBox.IsBound() &&
-			Schema->OnUsingAlternativeOutputPinBox.Execute(JavascriptGraphPin) &&
-			AltRightNodeBox.IsValid())
+		if (NodeBox.IsValid() == false)
 		{
-			NodeBox = AltRightNodeBox;
+			NodeBox = RightNodeBox;
 		}
 
-		if (bDisable) 
+		if (bDisable)
 		{
 			NodeBox->AddSlot()
-				[
-					PinToAdd
-				];
+			[
+				PinToAdd
+			];
 		}
 		else
 		{
@@ -358,18 +391,22 @@ void SJavascriptGraphEdNode::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 				[
 					PinToAdd
 				];
-
 		}
 		OutputPins.Add(PinToAdd);
 	}
 }
 
-END_SLATE_FUNCTION_BUILD_OPTIMIZATION
-
-EVisibility SJavascriptGraphEdNode::GetDragOverMarkerVisibility() const
+void SJavascriptGraphEdNode::UpdatePinSlate() 
 {
-	return EVisibility::Visible;
+	InputPins.Empty();
+	OutputPins.Empty();
+	RightNodeBox.Reset();
+	LeftNodeBox.Reset();
+
+	CreatePinWidgets();
 }
+
+END_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
 FText SJavascriptGraphEdNode::GetDescription() const
 {
@@ -519,13 +556,99 @@ void SJavascriptGraphEdNode::PerformSecondPassLayout(const TMap< UObject*, TShar
 	}
 }
 
+void SJavascriptGraphEdNode::OnDragEnter(const FGeometry & MyGeometry, const FDragDropEvent & DragDropEvent)
+{
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	if (Schema->OnDragEnter.IsBound())
+	{
+		TSharedPtr<FDragJavascriptGraphNode> DragOp = DragDropEvent.GetOperationAs<FDragJavascriptGraphNode>();
+		if (DragOp.IsValid())
+		{
+			if (Schema->OnDragEnter.Execute(GraphEdNode, DragOp->GetDropTargetNode(), MyGeometry))
+			{
+				DragOp->SetHoveredNode(SharedThis(this));
+			}
+			else
+			{
+				DragOp->SetHoveredNode(TSharedPtr<SGraphNode>(NULL));
+			}
+		}
+		return;
+	}
+
+	SGraphNode::OnDragEnter(MyGeometry, DragDropEvent);
+}
+
+void SJavascriptGraphEdNode::OnDragLeave(const FDragDropEvent & DragDropEvent)
+{
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	if (Schema->OnDragLeave.IsBound())
+	{
+		TSharedPtr<FDragJavascriptGraphNode> DragOp = DragDropEvent.GetOperationAs<FDragJavascriptGraphNode>();
+		if (DragOp.IsValid())
+		{
+			if (Schema->OnDragLeave.Execute(GraphEdNode)) 
+			{
+				DragOp->SetHoveredNode(TSharedPtr<SGraphNode>(NULL));
+			}
+		}
+		return;
+	}
+
+	SGraphNode::OnDragLeave(DragDropEvent);
+}
+
+FReply SJavascriptGraphEdNode::OnDragOver(const FGeometry & MyGeometry, const FDragDropEvent & DragDropEvent)
+{
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	if (Schema->OnDragOver.IsBound())
+	{
+		TSharedPtr<FDragJavascriptGraphNode> DragOp = DragDropEvent.GetOperationAs<FDragJavascriptGraphNode>();
+		if (DragOp.IsValid())
+		{
+			if (Schema->OnDragOver.Execute(GraphEdNode, DragOp->GetDropTargetNode(), MyGeometry))
+			{
+				DragOp->SetHoveredNode(SharedThis(this));
+			}
+			else
+			{
+				DragOp->SetHoveredNode(TSharedPtr<SGraphNode>(NULL));
+			}
+		}
+		return FReply::Handled();
+	}
+	return SGraphNode::OnDragOver(MyGeometry, DragDropEvent);
+}
+
+FReply SJavascriptGraphEdNode::OnDrop(const FGeometry & MyGeometry, const FDragDropEvent & DragDropEvent)
+{
+	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
+	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
+	if (Schema->OnDrop.IsBound())
+	{
+		TSharedPtr<FDragJavascriptGraphNode> DragOp = DragDropEvent.GetOperationAs<FDragJavascriptGraphNode>();
+		if (DragOp.IsValid())
+		{
+			if (Schema->OnDrop.Execute(GraphEdNode, DragOp->GetDropTargetNode(), MyGeometry))
+			{
+				;// do something
+			}
+		}
+		return FReply::Handled();
+	}
+	return SGraphNode::OnDrop(MyGeometry, DragDropEvent);
+}
+
 void SJavascriptGraphEdNode::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
 	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
 	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
 	if (Schema->OnMouseEnter.IsBound())
 	{
-		Schema->OnMouseEnter.Execute(GraphEdNode, FJavascriptSlateEdNode{ this });
+		Schema->OnMouseEnter.Execute(GraphEdNode, FJavascriptSlateEdNode{ this }, MouseEvent);
 	}
 	
 	if (!bUserIsDragging && Schema->OnIsNodeComment.IsBound() && Schema->OnIsNodeComment.Execute(GraphEdNode))
@@ -543,7 +666,7 @@ void SJavascriptGraphEdNode::OnMouseLeave(const FPointerEvent& MouseEvent)
 	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
 	if (Schema->OnMouseLeave.IsBound())
 	{
-		Schema->OnMouseLeave.Execute(GraphEdNode, FJavascriptSlateEdNode{ this });
+		Schema->OnMouseLeave.Execute(GraphEdNode, FJavascriptSlateEdNode{ this }, MouseEvent);
 	}
 
 	if (!bUserIsDragging && Schema->OnIsNodeComment.IsBound() && Schema->OnIsNodeComment.Execute(GraphEdNode))
@@ -565,7 +688,11 @@ FReply SJavascriptGraphEdNode::OnMouseMove(const FGeometry& MyGeometry, const FP
 		TSharedPtr<SWindow> OwnerWindow = FSlateApplication::Get().FindWidgetWindow(AsShared());
 		FVector2D Delta = (GraphSpaceCoordinates - OldGraphSpaceCoordinates) / (OwnerWindow.IsValid() ? OwnerWindow->GetDPIScaleFactor() : 1.0f);
 
-		Schema->OnMouseMove.Execute(GraphEdNode, Delta, bUserIsDragging, (int32)MouseZone);
+		if (Schema->OnMouseMove.Execute(GraphEdNode, Delta, bUserIsDragging, (int32)MouseZone, MouseEvent))
+		{
+			const TSharedRef<SJavascriptGraphEdNode>& Node = SharedThis(this);
+			return FReply::Handled().BeginDragDrop(FDragJavascriptGraphNode::New(Node));
+		}
 	}
 
 	if (!bUserIsDragging && Schema->OnIsNodeComment.IsBound() && Schema->OnIsNodeComment.Execute(GraphEdNode))
@@ -584,7 +711,10 @@ FReply SJavascriptGraphEdNode::OnMouseButtonDown(const FGeometry& MyGeometry, co
 	
 	if (Schema->OnMouseButtonDown.IsBound())
 	{
-		Schema->OnMouseButtonDown.Execute(GraphEdNode, MyGeometry);
+		if (Schema->OnMouseButtonDown.Execute(GraphEdNode, MyGeometry, MouseEvent))
+		{
+			return FReply::Handled();
+		}
 	}
 
 	if (Schema->OnIsNodeComment.IsBound() && Schema->OnIsNodeComment.Execute(GraphEdNode))
@@ -605,7 +735,10 @@ FReply SJavascriptGraphEdNode::OnMouseButtonUp(const FGeometry& MyGeometry, cons
 	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
 	if (Schema->OnMouseButtonUp.IsBound())
 	{
-		Schema->OnMouseButtonUp.Execute(GraphEdNode, MyGeometry);
+		if (Schema->OnMouseButtonUp.Execute(GraphEdNode, MyGeometry, MouseEvent))
+		{
+			return FReply::Handled();
+		}
 	}
 
 	if (Schema->OnIsNodeComment.IsBound() && Schema->OnIsNodeComment.Execute(GraphEdNode))
@@ -727,30 +860,14 @@ void SJavascriptGraphEdNode::PositionBetweenTwoNodesWithOffset(const FGeometry& 
 	GraphNode->NodePosY = NewCorner.Y;
 }
 
-
 FString SJavascriptGraphEdNode::GetNodeComment() const
 {
-	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
-	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
-	if (GraphEdNode && Schema->OnGetNodeComment.IsBound())
-	{
-		FText Text = Schema->OnGetNodeComment.Execute(GraphEdNode);
-		GetNodeObj()->NodeComment = Text.ToString();
-	}
-
 	return GetNodeObj()->NodeComment;
 }
 
 void SJavascriptGraphEdNode::OnCommentTextCommitted(const FText& NewComment, ETextCommit::Type CommitInfo)
 {
 	GetNodeObj()->OnUpdateCommentText(NewComment.ToString());
-
-	auto GraphEdNode = CastChecked<UJavascriptGraphEdNode>(GraphNode);
-	auto Schema = CastChecked<UJavascriptGraphAssetGraphSchema>(GraphNode->GetSchema());
-	if (GraphEdNode && Schema->OnSetNodeComment.IsBound())
-	{
-		Schema->OnSetNodeComment.Execute(GraphEdNode, NewComment);
-	}
 }
 
 int32 SJavascriptGraphEdNode::GetSortDepth() const
@@ -808,8 +925,7 @@ FReply SJavascriptGraphEdNode::OnAddPin()
 	if (GraphEdNode && Schema->OnAddPinByAddButton.IsBound())
 	{
 		Schema->OnAddPinByAddButton.Execute(GraphEdNode);
-		UpdateGraphNode();
-		GraphNode->GetGraph()->NotifyGraphChanged();
+		UpdatePinSlate();
 	}
 
 	return FReply::Handled();

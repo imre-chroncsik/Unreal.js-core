@@ -1,6 +1,6 @@
 #pragma once
 
-#include "v8.h"
+#include "V8PCH.h"
 
 enum class EPropertyOwner
 {
@@ -55,6 +55,39 @@ struct FPropertyAccessorFlags
 	bool Alternative = false;
 };
 
+#if WITH_EDITOR
+template <typename Type>
+static void SetMetaData(Type* Object, const FString& Key, const FString& Value)
+{
+	if (Key.Compare(TEXT("None"), ESearchCase::IgnoreCase) == 0 || Key.Len() == 0) return;
+
+	if (Value.Len() == 0)
+	{
+		Object->SetMetaData(*Key, TEXT("true"));
+	}
+	else
+	{
+		Object->SetMetaData(*Key, *Value);
+	}
+}
+#endif
+
+static void SetEnumFlags(UEnum* Enum, const TArray<FString>& Flags)
+{
+	for (const auto& Flag : Flags)
+	{
+		FString Left, Right;
+		if (!Flag.Split(TEXT(":"), &Left, &Right))
+		{
+			Left = Flag;
+		}
+
+#if WITH_EDITOR
+		SetMetaData(Enum, Left, Right);
+#endif
+	}
+}
+
 namespace v8
 {
 	Local<Value> ReadProperty(Isolate* isolate, UProperty* Property, uint8* Buffer, const IPropertyOwner& Owner, const FPropertyAccessorFlags& Flags = FPropertyAccessorFlags());
@@ -64,11 +97,11 @@ namespace v8
 	Local<String> V8_String(Isolate* isolate, const char* String);
 	Local<String> V8_KeywordString(Isolate* isolate, const FString& String);
 	Local<String> V8_KeywordString(Isolate* isolate, const char* String);
-	FString StringFromV8(Local<Value> Value);
+	FString StringFromV8(Isolate* isolate, Local<Value> Value);
 	void CallJavascriptFunction(Handle<Context> context, Handle<Value> This, UFunction* SignatureFunction, Handle<Function> func, void* Parms);
 	UClass* UClassFromV8(Isolate* isolate_, Local<Value> Value);
-	UObject* UObjectFromV8(Local<Value> Value);
-	uint8* RawMemoryFromV8(Local<Value> Value);
+	UObject* UObjectFromV8(Local<Context> context, Local<Value> Value);
+	uint8* RawMemoryFromV8(Local<Context> context, Local<Value> Value);
 	FString StringFromArgs(const FunctionCallbackInfo<v8::Value>& args, int StartIndex = 0);
 	FString PropertyNameToString(UProperty* Property, bool bConvertComparisionIndex = true);
 	bool MatchPropertyName(UProperty* Property, FName NameToMatch);

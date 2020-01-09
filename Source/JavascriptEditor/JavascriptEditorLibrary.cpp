@@ -1,4 +1,4 @@
-#include "JavascriptEditorLibrary.h"
+﻿#include "JavascriptEditorLibrary.h"
 #include "LandscapeComponent.h"
 
 // WORKAROUND for 4.15
@@ -13,6 +13,7 @@
 #include "BSPOps.h"
 #include "Misc/HotReloadInterface.h"
 #include "JavascriptUMG/JavascriptWindow.h"
+#include "JavascriptUMG/JavascriptUMGLibrary.h"
 #include "Editor/PropertyEditor/Public/PropertyEditorModule.h"
 #include "Toolkits/AssetEditorToolkit.h"
 #include "LevelEditor.h"
@@ -52,8 +53,11 @@
 #include "Animation/AnimTypes.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
+#include "Curves/RichCurve.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/EngineTypes.h"
+#include "Toolkits/AssetEditorManager.h"
 
 #if WITH_EDITOR
 ULandscapeInfo* UJavascriptEditorLibrary::GetLandscapeInfo(ALandscape* Landscape, bool bSpawnNewActor)
@@ -553,6 +557,24 @@ void UJavascriptEditorLibrary::ClearActorLabel(AActor* Actor)
 	Actor->ClearActorLabel();
 }
 
+bool UJavascriptEditorLibrary::SetActorLocation(AActor* Actor, FVector NewLocation, bool bSweep, FHitResult& SweepHitResult, bool bTeleport)
+{
+	if (IsValid(Actor))
+	{
+		return Actor->SetActorLocation(NewLocation, bSweep, (bSweep ? &SweepHitResult : nullptr), TeleportFlagToEnum(bTeleport));
+	}
+	return false;
+}
+
+FVector UJavascriptEditorLibrary::GetActorLocation(AActor* Actor)
+{
+	if (IsValid(Actor))
+	{
+		return Actor->GetActorLocation();
+	}
+	return FVector::ZeroVector;
+}
+
 bool UJavascriptEditorLibrary::IsActorLabelEditable(AActor* Actor)
 {
 	return Actor->IsActorLabelEditable();
@@ -628,7 +650,7 @@ void UJavascriptEditorLibrary::EditorAddModalWindow(FJavascriptSlateWidget Widge
 
 FJavascriptSlateWidget UJavascriptEditorLibrary::GetRootWindow()
 {
-	return {StaticCastSharedPtr<SWidget>(FGlobalTabmanager::Get()->GetRootWindow())};
+	return { StaticCastSharedPtr<SWidget>(FGlobalTabmanager::Get()->GetRootWindow()) };
 }
 
 void UJavascriptEditorLibrary::CreatePropertyEditorToolkit(TArray<UObject*> ObjectsForPropertiesMenu)
@@ -998,7 +1020,11 @@ void UJavascriptEditorLibrary::CompileBlueprint(UBlueprint* Blueprint)
 
 bool UJavascriptEditorLibrary::OpenEditorForAsset(UObject* Asset)
 {
-	return FAssetEditorManager::Get().OpenEditorForAsset(Asset);
+	if (auto* SubSystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+	{
+		return SubSystem->OpenEditorForAsset(Asset);
+	}
+	return false;
 }
 
 void UJavascriptEditorLibrary::OpenEditorForAssetByPath(const FString& AssetPathName, const FString& ObjectName)
@@ -1012,7 +1038,10 @@ void UJavascriptEditorLibrary::OpenEditorForAssetByPath(const FString& AssetPath
 		UObject* Object = FindObject<UObject>(Package, *ObjectName);
 		if (Object != NULL)
 		{
-			FAssetEditorManager::Get().OpenEditorForAsset(Object);
+			if (auto* SubSystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+			{
+				SubSystem->OpenEditorForAsset(Object);
+			}
 		}
 	}
 }
@@ -1165,7 +1194,7 @@ static void WriteRawToTexture_RenderThread(FTexture2DDynamicResource* TextureRes
 {
 	check(IsInRenderingThread());
 
-	FTexture2DRHIParamRef TextureRHI = TextureResource->GetTexture2DRHI();
+	FRHITexture2D* TextureRHI = TextureResource->GetTexture2DRHI().GetReference();
 
 	int32 Width = TextureRHI->GetSizeX();
 	int32 Height = TextureRHI->GetSizeY();
@@ -1297,12 +1326,84 @@ FString UJavascriptEditorLibrary::GetKeyNameByKeyEvent(const FKeyEvent& Event)
 	return Event.GetKey().GetFName().ToString();
 }
 
+bool UJavascriptEditorLibrary::GetIsControlDownByKeyEvent(const FKeyEvent& Event)
+{
+	return Event.IsControlDown();
+}
+
+bool UJavascriptEditorLibrary::GetIsShiftDownByKeyEvent(const FKeyEvent& Event)
+{
+	return Event.IsShiftDown();
+}
+
+bool UJavascriptEditorLibrary::GetIsAltDownByKeyEvent(const FKeyEvent& Event)
+{
+	return Event.IsAltDown();
+}
+
 FString UJavascriptEditorLibrary::GetDataTableAsJSON(UDataTable* InDataTable, uint8 InDTExportFlags)
 {
 	if (InDataTable == nullptr)
 		return TEXT("");
 
 	return InDataTable->GetTableAsJSON((EDataTableExportFlags)InDTExportFlags);
+}
+
+void UJavascriptEditorLibrary::AddRichCurve(UCurveTable* InCurveTable, const FName& Key, const FRichCurve& InCurve)
+{
+#if ENGINE_MINOR_VERSION < 22
+	FRichCurve* NewCurve = new FRichCurve();
+	NewCurve->SetKeys(InCurve.GetConstRefOfKeys());
+	NewCurve->PreInfinityExtrap = InCurve.PreInfinityExtrap;
+	NewCurve->PostInfinityExtrap = InCurve.PostInfinityExtrap;
+	NewCurve->DefaultValue = InCurve.DefaultValue;
+	InCurveTable->RowMap.Remove(Key);
+	InCurveTable->RowMap.Add(Key, NewCurve);
+#else
+	FRichCurve& NewCurve = InCurveTable->AddRichCurve(Key);
+	NewCurve.SetKeys(InCurve.GetConstRefOfKeys());
+	NewCurve.PreInfinityExtrap = InCurve.PreInfinityExtrap;
+	NewCurve.PostInfinityExtrap = InCurve.PostInfinityExtrap;
+	NewCurve.DefaultValue = InCurve.DefaultValue;
+#endif
+}
+
+void UJavascriptEditorLibrary::NotifyUpdateCurveTable(UCurveTable* InCurveTable)
+{
+	InCurveTable->OnCurveTableChanged().Broadcast();
+}
+
+bool UJavascriptEditorLibrary::HasMetaData(UField* Field, const FString& Key)
+{
+	return Field->HasMetaData(*Key);
+}
+
+UWorld* UJavascriptEditorLibrary::GetEditorPlayWorld()
+{
+	return GEditor->PlayWorld;
+}
+
+bool UJavascriptEditorLibrary::ToggleIsExecuteTestModePIE()
+{
+	auto* StaticGameData = Cast<UJavascriptStaticCache>(GEngine->GameSingleton);
+	if (StaticGameData)
+	{
+		StaticGameData->bExecuteTestModePIE ^= true;
+		return StaticGameData->bExecuteTestModePIE;
+	}
+
+	return false;
+}
+
+bool UJavascriptEditorLibrary::GetIsExecuteTestModePIE()
+{
+	auto* StaticGameData = Cast<UJavascriptStaticCache>(GEngine->GameSingleton);
+	if (StaticGameData)
+	{
+		return StaticGameData->bExecuteTestModePIE;
+	}
+
+	return false;
 }
 
 #endif

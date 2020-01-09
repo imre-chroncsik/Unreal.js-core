@@ -474,11 +474,14 @@ public:
 		FIsolateHelper I(isolate());
 
 		{
-			auto console = context()->Global()->Get(I.Keyword("console"));
-			context()->Global()->Set(I.Keyword("$console"), console);
+			auto console = context()->Global()->Get(context(), I.Keyword("console"));
+			if (!console.IsEmpty())
+			{
+				(void)context()->Global()->Set(context(), I.Keyword("$console"), console.ToLocalChecked());
+			}
 		}
 
-		v8inspector = v8_inspector::V8Inspector::create(context()->GetIsolate(), this);
+		v8inspector = v8_inspector::V8Inspector::create(isolate(), this);
 		const uint8_t CONTEXT_NAME[] = "Unreal.js";
 		v8_inspector::StringView context_name(CONTEXT_NAME, sizeof(CONTEXT_NAME) - 1);
 		v8inspector->contextCreated(v8_inspector::V8ContextInfo(context(), CONTEXT_GROUP_ID, context_name));
@@ -492,8 +495,8 @@ public:
 			TryCatch try_catch(isolate());
 
 			auto source = TEXT("'log error warn info void assert'.split(' ').forEach(x => { let o = console[x].bind(console); let y = $console[x].bind($console); console['$'+x] = o; console[x] = function () { y(...arguments); return o(...arguments); }})");
-			auto script = v8::Script::Compile(I.String(source));
-			auto result = script->Run();
+			auto script = v8::Script::Compile(InContext, I.String(source)).ToLocalChecked();
+			auto result = script->Run(InContext);
 		}
 
 		UE_LOG(Javascript, Log, TEXT("open %s"), *DevToolsFrontEndUrl());
@@ -532,33 +535,43 @@ public:
 			HandleScope handle_scope(isolate());
 
 			FIsolateHelper I(isolate());
-
+			auto context_ = context();
 			Isolate::Scope isolate_scope(isolate());
-			Context::Scope context_scope(context());
+			Context::Scope context_scope(context_);
 
 			TryCatch try_catch(isolate());
 
-			auto console = context()->Global()->Get(I.Keyword("console")).As<v8::Object>();
-
-			auto method =
-				Verbosity == ELogVerbosity::Fatal || Verbosity == ELogVerbosity::Error ? I.Keyword("$error") :
-				Verbosity == ELogVerbosity::Warning ? I.Keyword("$warn") :
-				Verbosity == ELogVerbosity::Display ? I.Keyword("info") :
-				I.Keyword("$log");
-			auto function = console->Get(method).As<v8::Function>();
-
-			if (Verbosity == ELogVerbosity::Display)
+			auto maybe_console = context_->Global()->Get(context_, I.Keyword("console"));
+			if (!maybe_console.IsEmpty())
 			{
-				Handle<Value> argv[2];
-				argv[0] = I.String(FString::Printf(TEXT("%%c%s: %s"), *Category.ToString(), V));
-				argv[1] = I.String(TEXT("color:gray"));
-				function->Call(console, 2, argv);
-			}
-			else
-			{
-				Handle<Value> argv[1];
-				argv[0] = I.String(FString::Printf(TEXT("%s: %s"), *Category.ToString(), V));
-				function->Call(console, 1, argv);
+				auto console = maybe_console.ToLocalChecked().As<v8::Object>();
+
+				auto method =
+					Verbosity == ELogVerbosity::Fatal || Verbosity == ELogVerbosity::Error ? I.Keyword("$error") :
+					Verbosity == ELogVerbosity::Warning ? I.Keyword("$warn") :
+					Verbosity == ELogVerbosity::Display ? I.Keyword("info") :
+					I.Keyword("$log");
+
+				auto maybe_function = console->Get(context_, method);
+
+				if (!maybe_function.IsEmpty())
+				{
+					auto function = maybe_function.ToLocalChecked().As<v8::Function>();
+
+					if (Verbosity == ELogVerbosity::Display)
+					{
+						Handle<Value> argv[2];
+						argv[0] = I.String(FString::Printf(TEXT("%%c%s: %s"), *Category.ToString(), V));
+						argv[1] = I.String(TEXT("color:gray"));
+						(void)function->Call(context(), console, 2, argv);
+					}
+					else
+					{
+						Handle<Value> argv[1];
+						argv[0] = I.String(FString::Printf(TEXT("%s: %s"), *Category.ToString(), V));
+						(void)function->Call(context(), console, 1, argv);
+					}
+				}
 			}
 		}
 	}

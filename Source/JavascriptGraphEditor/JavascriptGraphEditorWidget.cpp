@@ -1,4 +1,4 @@
-#include "JavascriptGraphEditorWidget.h"
+﻿#include "JavascriptGraphEditorWidget.h"
 #include "JavascriptGraphAssetGraphSchema.h"
 #include "JavascriptGraphEdGraph.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -67,17 +67,23 @@ void UJavascriptGraphEditorWidget::HandleOnNodeDoubleClicked(UEdGraphNode* Node)
 void UJavascriptGraphEditorWidget::ClearSelectionSet()
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->ClearSelectionSet();
+	if (Widget.IsValid())
+	{
+		Widget->ClearSelectionSet();
+	}
 }
 
 TArray<UObject*> UJavascriptGraphEditorWidget::GetSelectedNodes()
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	auto Set = Widget->GetSelectedNodes();
 	TArray<UObject*> Out;
-	for (auto x : Set)
+	if (Widget.IsValid())
 	{
-		Out.Add(x);
+		auto Set = Widget->GetSelectedNodes();
+		for (auto x : Set)
+		{
+			Out.Add(x);
+		}
 	}
 	return Out;
 }
@@ -85,43 +91,75 @@ TArray<UObject*> UJavascriptGraphEditorWidget::GetSelectedNodes()
 void UJavascriptGraphEditorWidget::SetNodeSelection(UEdGraphNode* Node, bool bSelect)
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->SetNodeSelection(Node, bSelect);
+	if (Widget.IsValid())
+	{
+		Widget->SetNodeSelection(Node, bSelect);
+	}
 }
 
 void UJavascriptGraphEditorWidget::SelectAllNodes()
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->SelectAllNodes();
+	if (Widget.IsValid())
+	{
+		Widget->SelectAllNodes();
+	}
 }
 
 void UJavascriptGraphEditorWidget::SetViewLocation(const FVector2D& Location, float ZoomAmount)
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->SetViewLocation(Location, ZoomAmount);
+	if (Widget.IsValid())
+	{
+		Widget->SetViewLocation(Location, ZoomAmount);
+	}
 }
 
 void UJavascriptGraphEditorWidget::GetViewLocation(FVector2D& OutLocation, float& OutZoomAmount)
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->GetViewLocation(OutLocation, OutZoomAmount);
+	if (Widget.IsValid())
+	{
+		Widget->GetViewLocation(OutLocation, OutZoomAmount);
+	}
 }
 
 void UJavascriptGraphEditorWidget::JumpToNode(UEdGraphNode* JumpToMe, bool bRequestRename/* = false*/, bool bSelectNode/* = true*/)
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->JumpToNode(JumpToMe, bRequestRename, bSelectNode);
+	if (Widget.IsValid())
+	{
+		Widget->JumpToNode(JumpToMe, bRequestRename, bSelectNode);
+	}
 }
 
 void UJavascriptGraphEditorWidget::JumpToPin(FJavascriptEdGraphPin JumpToMe)
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	Widget->JumpToPin(JumpToMe);
+	if (Widget.IsValid())
+	{
+		Widget->JumpToPin(JumpToMe);
+	}
+}
+
+void UJavascriptGraphEditorWidget::SetPinVisibility(EPinVisibility InVisibility)
+{
+	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
+	if (Widget.IsValid())
+	{
+		auto pinVisibility = (SGraphEditor::EPinVisibility)(uint8)InVisibility;
+		Widget->SetPinVisibility(pinVisibility);
+	}
 }
 
 FVector2D UJavascriptGraphEditorWidget::GetPasteLocation()
 {
 	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
-	return Widget->GetPasteLocation();
+	if (Widget.IsValid())
+	{
+		return Widget->GetPasteLocation();
+	}
+	return FVector2D::ZeroVector;
 }
 
 void UJavascriptGraphEditorWidget::HandleDropActors(const TArray< TWeakObjectPtr<class AActor> >& Actors, class UEdGraph* Graph, const FVector2D& Point)
@@ -141,4 +179,13 @@ void UJavascriptGraphEditorWidget::HandleDropActors(const TArray< TWeakObjectPtr
 void UJavascriptGraphEditorWidget::HandleDisallowedPinConnection(const UEdGraphPin* A, const UEdGraphPin* B)
 {
 	OnDisallowedPinConnection.ExecuteIfBound(const_cast<UEdGraphPin*>(A), const_cast<UEdGraphPin*>(B));
+}
+
+void UJavascriptGraphEditorWidget::NotifyGraphChanged()
+{
+	auto Widget = StaticCastSharedPtr<SGraphEditor>(GetCachedWidget());
+	if (Widget.IsValid())
+	{
+		Widget->NotifyGraphChanged();
+	}
 }

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "JavascriptGraphEdGraph.h"
 #include "JavascriptGraphEditorLibrary.h"
@@ -34,6 +34,8 @@ class UJavascriptGraphEdNode : public UEdGraphNode
 {
 	GENERATED_BODY()
 
+	DECLARE_DYNAMIC_DELEGATE(FOnWidgetFinalized);
+
 public:
 	UPROPERTY()
 	FSlateColor BackgroundColor;
@@ -43,13 +45,20 @@ public:
 
 	UPROPERTY()
 	bool IsTitleOnly;
-	
+
+	UPROPERTY()
+	bool IsCustomNode;
+
+	UPROPERTY(EditAnywhere, Category = Events, meta = (IsBindableEvent = "True"))
+	FOnWidgetFinalized OnWidgetFinalized;
+
 public:
 	virtual void AllocateDefaultPins() override;
 	virtual void NodeConnectionListChanged() override;
 	virtual void PinConnectionListChanged(UEdGraphPin* Pin) override;
 
 	UJavascriptGraphEdGraph* GetGenericGraphEdGraph();
+	TSharedPtr<SJavascriptGraphEdNode> GetNodeSlateWidget() const;
 
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const;
 	virtual FText GetDescription() const;
@@ -64,6 +73,7 @@ public:
 		UObject* PinSubCategoryObject,
 		const FName PinName,
 		const FString& PinToolTip,
+		const FText& PinDisplayName,
 		const FJavascriptPinParams& InPinParams
 		);
 
@@ -88,10 +98,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	void SetVisible(bool bVisible);
 
-	UFUNCTION(BlueprintCallable)
-	void SetTitleSelectionMode(float TitleHeight);
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	bool GetVisible();
 
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	void SetTitleSelectionMode(float InTitleHeight);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	void ResetTitleSelectionMode();
 
 public:
@@ -101,7 +114,7 @@ public:
 	UPROPERTY()
 	int32 PriorityOrder;
 
-	SJavascriptGraphEdNode* SlateGraphNode;
+	TWeakPtr<SJavascriptGraphEdNode> SlateGraphNode;
 
 	bool bTitleSelectionOnly;
 	float TitleHeight;

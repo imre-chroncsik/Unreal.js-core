@@ -1,10 +1,11 @@
-#include "SJavascriptGraphEdNodePin.h"
+﻿#include "SJavascriptGraphEdNodePin.h"
 #include "SLevelOfDetailBranchNode.h"
 #include "JavascriptGraphAssetGraphSchema.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/SBoxPanel.h"
+#include "Components/Widget.h"
 
 void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 {
@@ -34,7 +35,7 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 				.BorderBackgroundColor(this, &SJavascriptGraphPin::GetPinColor)
 				.OnMouseButtonDown(this, &ThisClass::OnPinMouseDown)
 				.Cursor(this, &ThisClass::GetPinCursor)
-				);
+			);
 			return;
 		}
 	}
@@ -51,10 +52,10 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 		.Cursor(this, &ThisClass::GetPinCursor);
 	if (GraphSchema->OnGetActualPinWidget.IsBound())
 	{
-		auto Widget = GraphSchema->OnGetActualPinWidget.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) }).Widget;
-		if (Widget.IsValid())
+		UWidget* Widget = GraphSchema->OnGetActualPinWidget.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) });
+		if (Widget)
 		{
-			ActualPinWidget = Widget.ToSharedRef();
+			ActualPinWidget = Widget->TakeWidget();
 		}
 	}
 
@@ -72,29 +73,33 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 		];
 	if (GraphSchema->OnGetPinStatusIndicator.IsBound())
 	{
-		auto Widget = GraphSchema->OnGetPinStatusIndicator.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) }).Widget;
-		if (Widget.IsValid())
+		UWidget* Widget = GraphSchema->OnGetPinStatusIndicator.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) });
+		if (Widget)
 		{
-			PinStatusIndicator = Widget.ToSharedRef();
+			PinStatusIndicator = Widget->TakeWidget();
 		}
 	}
 
-	TSharedRef<SWidget> LabelWidget = SNew(STextBlock)
+	TSharedRef<SWidget> InLabelWidget = SNew(STextBlock)
 		.Text(this, &ThisClass::GetPinLabel)
 		.TextStyle(FEditorStyle::Get(), InArgs._PinLabelStyle)
 		.Visibility(this, &ThisClass::GetPinLabelVisibility)
 		.ColorAndOpacity(this, &ThisClass::GetPinTextColor);
-	TSharedRef<SWidget> ValueWidget = SNew(SBox);
+	TSharedRef<SWidget> InValueWidget = SNew(SBox);
 	if (GraphSchema->OnGetValueWidget.IsBound())
 	{
-		auto Widget = GraphSchema->OnGetValueWidget.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) }).Widget;
-		if (Widget.IsValid())
+		UWidget* Widget = GraphSchema->OnGetValueWidget.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) });
+		if (Widget)
 		{
-			ValueWidget = Widget.ToSharedRef();
+			InValueWidget = Widget->TakeWidget();
 		}
 	}
 	// Create the widget used for the pin body (status indicator, label, and value)
+#if ENGINE_MINOR_VERSION > 22
+	LabelAndValue =
+#else
 	TSharedRef<SWrapBox> LabelAndValue =
+#endif
 		SNew(SWrapBox)
 		.PreferredWidth(150.f);
 
@@ -110,24 +115,18 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 		LabelAndValue->AddSlot()
 			.VAlign(VAlign_Center)
 			[
-				LabelWidget
+				InLabelWidget
 			];
 		LabelAndValue->AddSlot()
 			.Padding(bIsInput ? FMargin(InArgs._SideToSideMargin, 0, 0, 0) : FMargin(0, 0, InArgs._SideToSideMargin, 0))
 			.VAlign(VAlign_Center)
 			[
-				SNew(SBox) 
+				SNew(SBox)
 				.Padding(0.0f)
-				.IsEnabled(this, &ThisClass::IsEditingEnabled)
-				[
-					ValueWidget
-// 					SNew(SHorizontalBox)
-// 					.Visibility(this, &ThisClass::GetDefaultValueVisibility)
-// 					+ SHorizontalBox::Slot()
-// 					[
-// 						ValueWidget
-// 					]
-				]
+			.IsEnabled(this, &ThisClass::IsEditingEnabled)
+			[
+				InValueWidget
+			]
 			];
 	}
 	else
@@ -135,7 +134,7 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 		LabelAndValue->AddSlot()
 			.VAlign(VAlign_Center)
 			[
-				LabelWidget
+				InLabelWidget
 			];
 
 		LabelAndValue->AddSlot()
@@ -144,16 +143,10 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 			[
 				SNew(SBox)
 				.Padding(0.0f)
-				.IsEnabled(this, &ThisClass::IsEditingEnabled)
-				[
-					ValueWidget
-// 					SNew(SHorizontalBox)
-// 					.Visibility(this, &ThisClass::GetDefaultValueVisibility)
-// 					+ SHorizontalBox::Slot()
-// 					[
-// 						ValueWidget
-// 					]
-				]
+			.IsEnabled(this, &ThisClass::IsEditingEnabled)
+			[
+				InValueWidget
+			]
 			];
 
 		LabelAndValue->AddSlot()
@@ -180,7 +173,11 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
+#if ENGINE_MINOR_VERSION > 22
+				LabelAndValue.ToSharedRef()
+#else
 				LabelAndValue
+#endif
 			];
 	}
 	else
@@ -191,7 +188,11 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
+#if ENGINE_MINOR_VERSION > 22
+				LabelAndValue.ToSharedRef()
+#else
 				LabelAndValue
+#endif			
 			]
 		+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -201,7 +202,7 @@ void SJavascriptGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin
 				ActualPinWidget
 			];
 	}
-	
+
 	// Set up a hover for pins that is tinted the color of the pin.
 	SBorder::Construct(SBorder::FArguments()
 		.BorderImage(this, &SJavascriptGraphPin::GetPinBorder)
@@ -251,7 +252,10 @@ const FSlateBrush* SJavascriptGraphPin::GetPinBorder() const
 	if (GraphSchema->OnGetSlateBrushName.IsBound())
 	{
 		FName SlateBrushName = GraphSchema->OnGetSlateBrushName.Execute(IsHovered(), FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) });
-		return FEditorStyle::GetBrush(SlateBrushName);
+		if (SlateBrushName.IsNone() == false)
+		{
+			return FEditorStyle::GetBrush(SlateBrushName);
+		}
 	}
 
 	return SGraphPin::GetPinBorder();
@@ -323,10 +327,10 @@ EVisibility SJavascriptGraphPin::GetPinLabelVisibility() const
 		bool bVisible = GraphSchema->OnGetPinLabelVisibility.Execute(FJavascriptEdGraphPin{ const_cast<UEdGraphPin*>(GraphPinObj) });
 		return bVisible ? EVisibility::Visible : EVisibility::Collapsed;
 	}
-	else if (GraphPinObj->Direction == EGPD_Output)
-	{
-		return EVisibility::Collapsed;
-	}
+	// 	else if (GraphPinObj->Direction == EGPD_Output)
+	// 	{
+	// 		return EVisibility::Collapsed;
+	// 	}
 
 	return SGraphPin::GetPinLabelVisibility();
 }

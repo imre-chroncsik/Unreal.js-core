@@ -1,4 +1,4 @@
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 using System.IO;
 using System;
 
@@ -36,13 +36,15 @@ public class V8 : ModuleRules
     public V8(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        bLegacyPublicIncludePaths = false;
+        ShadowVariableWarningLevel = WarningLevel.Error;
         PrivateIncludePaths.AddRange(new string[]
         {
             Path.Combine(ThirdPartyPath, "v8", "include")
         });
 
-        PublicDependencyModuleNames.AddRange(new string[] 
-        { 
+        PublicDependencyModuleNames.AddRange(new string[]
+        {
             "Core", "CoreUObject", "Engine", "Sockets", "ApplicationCore", "NavigationSystem", "OpenSSL"
         });
 
@@ -53,13 +55,13 @@ public class V8 : ModuleRules
                 "DirectoryWatcher"
             });
         }
-        
+
         HackWebSocketIncludeDir(Path.Combine(Directory.GetCurrentDirectory(), "ThirdParty", "libWebSockets", "libWebSockets"), Target);
 
         if (Target.bBuildEditor)
         {
-            PrivateDependencyModuleNames.AddRange(new string[] 
-            { 
+            PrivateDependencyModuleNames.AddRange(new string[]
+            {
                 "UnrealEd"
             });
         }
@@ -71,18 +73,16 @@ public class V8 : ModuleRules
 
     private void HackWebSocketIncludeDir(String WebsocketPath, ReadOnlyTargetRules Target)
     {
-        string PlatformSubdir = (Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32") ? "Win32" :
-        	Target.Platform.ToString();
+        string PlatformSubdir = Target.Platform.ToString();
 
         bool bHasZlib = false;
 
-        if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32 ||
-			(Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32"))
+        if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32)
         {
             PlatformSubdir = Path.Combine(PlatformSubdir, "VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName());
             bHasZlib = true;
 
-        }        
+        }
 		else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
             PlatformSubdir = Path.Combine(PlatformSubdir, Target.Architecture);
@@ -102,7 +102,7 @@ public class V8 : ModuleRules
     {
         int[] v8_version = GetV8Version();
         bool ShouldLink_libsampler = !(v8_version[0] == 5 && v8_version[1] < 3);
-
+        bool ShouldLink_lib_v8_compiler = (v8_version[0] > 6 && v8_version[1] > 6);
         if ((Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32))
         {
             string LibrariesPath = Path.Combine(ThirdPartyPath, "v8", "lib");
@@ -125,68 +125,66 @@ public class V8 : ModuleRules
                 LibrariesPath = Path.Combine(LibrariesPath, "Release");
             }
 
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_0.lib"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_1.lib"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_2.lib"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_3.lib"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_init.lib"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_initializers.lib"));
             PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_libbase.lib"));
             PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_libplatform.lib"));
             PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_nosnapshot.lib"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_libsampler.lib"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "torque_base.lib"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "torque_generated_initializers.lib"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "inspector.lib"));
 
-            if (v8_version[0] >= 6)
+            if (ShouldLink_lib_v8_compiler)
             {
-                if (v8_version[1] >= 4)
-                {
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_init.lib"));
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_initializers.lib"));
-                }
-                else
-                {
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_builtins_setup.lib"));
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_builtins_generators.lib"));
-                }
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_compiler.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_without_compiler_0.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_without_compiler_1.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "inspector_string_conversions.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "torque_generated_definitions.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "encoding.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "bindings.lib"));
             }
-
-            if (ShouldLink_libsampler)
+            else
             {
-                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_libsampler.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_0.lib"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "v8_base_1.lib"));
             }
-
 
             PublicDefinitions.Add(string.Format("WITH_V8=1"));
+
+            PublicDefinitions.Add(string.Format("USING_V8_PLATFORM_SHARED=0"));
 
             return true;
         }
         else if (Target.Platform == UnrealTargetPlatform.Android)
         {
             string LibrariesPath = Path.Combine(ThirdPartyPath, "v8", "lib", "Android");
-            PublicLibraryPaths.Add(Path.Combine(LibrariesPath, "ARMv7"));
-            PublicLibraryPaths.Add(Path.Combine(LibrariesPath, "ARM64"));
-            PublicLibraryPaths.Add(Path.Combine(LibrariesPath, "x86"));
-            PublicLibraryPaths.Add(Path.Combine(LibrariesPath, "x64"));
 
-            PublicAdditionalLibraries.Add("v8_base");
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "ARM64"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "ARMv7"));
+
+            PublicAdditionalLibraries.Add("v8_init");
+            PublicAdditionalLibraries.Add("v8_initializers");
             PublicAdditionalLibraries.Add("v8_libbase");
             PublicAdditionalLibraries.Add("v8_libplatform");
             PublicAdditionalLibraries.Add("v8_nosnapshot");
+            PublicAdditionalLibraries.Add("v8_libsampler");
+            PublicAdditionalLibraries.Add("torque_generated_initializers");
+            PublicAdditionalLibraries.Add("inspector");
 
-            if (v8_version[0] >= 6)
+            if (ShouldLink_lib_v8_compiler)
             {
-                if (v8_version[1] >= 4)
-                {
-                    PublicAdditionalLibraries.Add("v8_init");
-                    PublicAdditionalLibraries.Add("v8_initializers");
-                }
-                else
-                {
-                    PublicAdditionalLibraries.Add("v8_builtins_setup");
-                    PublicAdditionalLibraries.Add("v8_builtins_generators");
-                }
+                PublicAdditionalLibraries.Add("v8_compiler");
+                PublicAdditionalLibraries.Add("v8_base_without_compiler");
+                PublicAdditionalLibraries.Add("inspector_string_conversions");
+                PublicAdditionalLibraries.Add("encoding");
+                PublicAdditionalLibraries.Add("bindings");
+                PublicAdditionalLibraries.Add("torque_generated_definitions");
             }
-
-            if (ShouldLink_libsampler)
+            else
             {
-                PublicAdditionalLibraries.Add("v8_libsampler");
+                PublicAdditionalLibraries.Add("v8_base");
             }
 
             PublicDefinitions.Add(string.Format("WITH_V8=1"));
@@ -196,30 +194,37 @@ public class V8 : ModuleRules
         else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
             string LibrariesPath = Path.Combine(ThirdPartyPath, "v8", "lib", "Linux");
-            PublicLibraryPaths.Add(Path.Combine(LibrariesPath, "x64"));
-
-            PublicAdditionalLibraries.Add("v8_base");
-            PublicAdditionalLibraries.Add("v8_libbase");
-            PublicAdditionalLibraries.Add("v8_libplatform");
-            PublicAdditionalLibraries.Add("v8_nosnapshot");
-
-            if (v8_version[0] >= 6)
+            if (Target.Configuration == UnrealTargetConfiguration.Debug)
             {
-                if (v8_version[1] >= 4)
-                {
-                    PublicAdditionalLibraries.Add("v8_init");
-                    PublicAdditionalLibraries.Add("v8_initializers");
-                }
-                else
-                {
-                    PublicAdditionalLibraries.Add("v8_builtins_setup");
-                    PublicAdditionalLibraries.Add("v8_builtins_generators");
-                }
+                LibrariesPath = Path.Combine(LibrariesPath, "Debug");
+            }
+            else
+            {
+                LibrariesPath = Path.Combine(LibrariesPath, "Release");
             }
 
-            if (ShouldLink_libsampler)
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_init.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_initializers.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libbase.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libplatform.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_nosnapshot.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libsampler.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_base.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_generated_initializers.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libinspector.a"));
+
+            if (ShouldLink_lib_v8_compiler)
             {
-                PublicAdditionalLibraries.Add("v8_libsampler");
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_compiler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_base_without_compiler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libinspector_string_conversions.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libencoding.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libbindings.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_generated_definitions.a"));
+            }
+            else
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_base.a"));
             }
 
             PublicDefinitions.Add(string.Format("WITH_V8=1"));
@@ -228,37 +233,87 @@ public class V8 : ModuleRules
         }
         else if (Target.Platform == UnrealTargetPlatform.Mac)
         {
-            string LibrariesPath = Path.Combine(ThirdPartyPath, "v8", "lib", "Mac", "x64");
-            PublicLibraryPaths.Add(LibrariesPath);
+            string LibrariesPath = Path.Combine(ThirdPartyPath, "v8", "lib", "Mac");
 
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_base.a"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_libbase.a"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_libplatform.a"));
-            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_nosnapshot.a"));
-
-            if (v8_version[0] >= 6)
+            if (Target.Configuration == UnrealTargetConfiguration.Debug)
             {
-                if (v8_version[1] >= 4)
-                {
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_init.a"));
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_initializers.a"));
-                }
-                else
-                {
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_builtins_setup.a"));
-                    PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath,"libv8_builtins_generators.a"));
-                }
+                LibrariesPath = Path.Combine(LibrariesPath, "Debug");
+            }
+            else
+            {
+                LibrariesPath = Path.Combine(LibrariesPath, "Release");
             }
 
-            if (ShouldLink_libsampler)
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_init.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_initializers.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libbase.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libplatform.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_nosnapshot.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libsampler.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_base.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_generated_initializers.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libinspector.a"));
+
+
+            if (ShouldLink_lib_v8_compiler)
             {
-                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libsampler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_compiler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_base_without_compiler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libinspector_string_conversions.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libencoding.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libbindings.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_generated_definitions.a"));
+            }
+            else
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_base.a"));
             }
 
             PublicDefinitions.Add(string.Format("WITH_V8=1"));
 
             return true;
         }
+        else if (Target.Platform == UnrealTargetPlatform.IOS)
+        {
+            string LibrariesPath = Path.Combine(ThirdPartyPath, "v8", "lib", "IOS");
+
+            if (Target.Configuration == UnrealTargetConfiguration.Debug)
+            {
+                LibrariesPath = Path.Combine(LibrariesPath, "Debug");
+            }
+            else
+            {
+                LibrariesPath = Path.Combine(LibrariesPath, "Release");
+            }
+
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_init.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_initializers.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libbase.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libplatform.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_nosnapshot.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_libsampler.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_generated_initializers.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libinspector.a"));
+
+            if (ShouldLink_lib_v8_compiler)
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_compiler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_base_without_compiler.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libinspector_string_conversions.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libencoding.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libbindings.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libtorque_generated_definitions.a"));
+            }
+            else
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(LibrariesPath, "libv8_base.a"));
+            }
+
+            PublicDefinitions.Add(string.Format("WITH_V8=1"));
+
+            return true;
+        }
+
         PublicDefinitions.Add(string.Format("WITH_V8=0"));
         return false;
     }

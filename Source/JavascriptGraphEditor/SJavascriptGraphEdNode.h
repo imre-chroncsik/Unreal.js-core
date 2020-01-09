@@ -1,9 +1,25 @@
-#pragma once
+﻿#pragma once
 
 #include "SGraphNode.h"
 #include "SGraphPin.h"
+#include "GraphEditorDragDropAction.h"
 
 class UJavascriptGraphEdNode;
+
+class FDragJavascriptGraphNode : public FGraphEditorDragDropAction
+{
+public:
+	DRAG_DROP_OPERATOR_TYPE(FDragJavascriptGraphNode, FGraphEditorDragDropAction)
+
+	static TSharedRef<FDragJavascriptGraphNode> New(const TSharedRef<SGraphNode>& InDraggedNode);
+
+	virtual void HoverTargetChanged() override;
+
+	UJavascriptGraphEdNode* GetDropTargetNode() const;
+
+protected:
+	TArray< TSharedRef<SGraphNode> > DraggedNodes;
+};
 
 class SJavascriptGraphEdNode : public SGraphNode
 {
@@ -51,6 +67,10 @@ public:
 	//~ End SPanel Interface
 
 	//~ Begin SWidget Interface
+	virtual void OnDragEnter(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override;
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
 	virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
@@ -58,8 +78,6 @@ public:
 	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 	//~ End SWidget Interface
-
-	virtual EVisibility GetDragOverMarkerVisibility() const;
 
 	virtual FText GetDescription() const;
 	virtual EVisibility GetDescriptionVisibility() const;
@@ -74,6 +92,13 @@ public:
 public:
 	void PositionBetweenTwoNodesWithOffset(const FGeometry& StartGeom, const FGeometry& EndGeom, int32 NodeIndex, int32 MaxNodes) const;
 
+private:
+	TSharedPtr<SWidget> GetTitleAreaWidget();
+	TSharedPtr<SWidget>	GetUserWidget();
+	TSharedPtr<SWidget> GetContentWidget();
+	TSharedPtr<SWidget> ErrorReportingWidget();
+	void UpdatePinSlate();
+
 public:
 	/** The non snapped size of the node for fluid resizing */
 	FVector2D DragSize;
@@ -83,8 +108,4 @@ public:
 	bool bUserIsDragging;
 	/** The current window zone the mouse is in */
 	EResizableWindowZone MouseZone;
-
-protected:
-	TSharedPtr<SVerticalBox> AltLeftNodeBox;
-	TSharedPtr<SVerticalBox> AltRightNodeBox;
 };

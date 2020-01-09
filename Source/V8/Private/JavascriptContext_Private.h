@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-#include "v8.h"
+#include "V8PCH.h"
 
 struct FStructMemoryInstance;
 class FJavascriptIsolate;
@@ -15,8 +15,30 @@ struct FJavascriptContext : TSharedFromThis<FJavascriptContext>
 	/** A map from Unreal UObject to V8 Object */
 	TMap< UObject*, v8::UniquePersistent<v8::Value> > ObjectToObjectMap;
 
+	struct FExportedStructMemoryInfo
+	{
+		FExportedStructMemoryInfo() = default;
+		FExportedStructMemoryInfo(TSharedPtr<FStructMemoryInstance> InInstance, v8::UniquePersistent<v8::Value>&& InValue)
+			: Instance(InInstance)
+			, Value(MoveTemp(InValue))
+		{}
+		FExportedStructMemoryInfo(const FExportedStructMemoryInfo& Other) = default;
+		FExportedStructMemoryInfo(FExportedStructMemoryInfo&& TempOther) = default;
+
+		~FExportedStructMemoryInfo()
+		{
+			Instance.Reset();
+			Value.Reset();
+		}
+
+		// Keeps one reference count for FStructMemoryInstance
+		TSharedPtr<FStructMemoryInstance> Instance;
+		// Keeps one reference count for V8 Object
+		v8::UniquePersistent<v8::Value> Value;
+	};
+
 	/** A map from Struct buffer to V8 Object */
-	TMap< TSharedPtr<FStructMemoryInstance>, v8::UniquePersistent<v8::Value> > MemoryToObjectMap;
+	TMap<FStructMemoryInstance*, FExportedStructMemoryInfo> MemoryToObjectMap;
 
 	virtual ~FJavascriptContext() {}
 	virtual void Expose(FString RootName, UObject* Object) = 0;
@@ -26,8 +48,6 @@ struct FJavascriptContext : TSharedFromThis<FJavascriptContext>
 	virtual void RequestV8GarbageCollection() = 0;
 	virtual void Public_RunFile(const FString& Filename, bool makeModule = false) = 0;
     virtual void FindPathFile(const FString TargetRootPath, const FString TargetFileName, TArray<FString>& OutFiles) = 0;
-	virtual void SetAsDebugContext(int32 InPort) = 0;
-	virtual void ResetAsDebugContext() = 0;
 	virtual bool IsDebugContext() const = 0;
 	virtual void CreateInspector(int32 Port) = 0;
 	virtual void DestroyInspector() = 0;
@@ -35,13 +55,14 @@ struct FJavascriptContext : TSharedFromThis<FJavascriptContext>
 	virtual bool WriteDTS(const FString& Filename, bool bIncludingTooltip) = 0;
 	virtual bool HasProxyFunction(UObject* Holder, UFunction* Function) = 0;
 	virtual bool CallProxyFunction(UObject* Holder, UObject* This, UFunction* FunctionToCall, void* Parms) = 0;	
+	virtual bool CallProxyFunction(UObject* Holder, UObject* This, const TCHAR* Name, void* Parms) = 0;
 
 	virtual void UncaughtException(const FString& Exception) = 0;
 
 	virtual v8::Isolate* isolate() = 0;
 	virtual v8::Local<v8::Context> context() = 0;
 	virtual v8::Local<v8::Value> ExportObject(UObject* Object, bool bForce = false) = 0;
-	virtual v8::Local<v8::Value> GetProxyFunction(UObject* Object, const TCHAR* Name) = 0;
+	virtual v8::Local<v8::Value> GetProxyFunction(v8::Local<v8::Context> Context, UObject* Object, const TCHAR* Name) = 0;
 
 	static FJavascriptContext* FromV8(v8::Local<v8::Context> Context);
 

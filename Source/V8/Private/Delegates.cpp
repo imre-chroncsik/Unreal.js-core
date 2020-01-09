@@ -1,11 +1,12 @@
-PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
-
 #include "Delegates.h"
 #include "JavascriptDelegate.h"
 #include "Translator.h"
 #include "JavascriptStats.h"
 #include "UObject/GCObject.h"
-#include "V8PCH.h"
+#include "../../Launch/Resources/Version.h"
+#include "v8-version.h"
+
+PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 
 using namespace v8;
 
@@ -107,8 +108,10 @@ public:
 		auto toJSON = [](const FunctionCallbackInfo<Value>& info) {
 			auto payload = reinterpret_cast<FJavascriptDelegate*>(Local<External>::Cast(info.Data())->Value());
 
-			uint32_t Index = 0;			
-			auto arr = Array::New(info.GetIsolate(), payload->DelegateObjects.Num());
+			uint32_t Index = 0;		
+			auto isolate_ = info.GetIsolate();
+			auto context_ = isolate_->GetCurrentContext();
+			auto arr = Array::New(isolate_, payload->DelegateObjects.Num());
 			const bool bIsMulticastDelegate = payload->Property->IsA(UMulticastDelegateProperty::StaticClass());
 
 			for (auto DelegateObject : payload->DelegateObjects)
@@ -116,20 +119,20 @@ public:
 				auto JavascriptFunction = payload->functions.Find(DelegateObject->UniqueId);
 				if (JavascriptFunction)
 				{
-					auto function = Local<Function>::New(info.GetIsolate(), *JavascriptFunction);
+					auto function = Local<Function>::New(isolate_, *JavascriptFunction);
 					if (!bIsMulticastDelegate)
 					{
 						info.GetReturnValue().Set(function);
 						return;
 					}
 					
-					arr->Set(Index++, function);
+					(void)arr->Set(context_, Index++, function);
 				}
 			}
 
 			if (!bIsMulticastDelegate)
 			{
-				info.GetReturnValue().Set(Null(info.GetIsolate()));
+				info.GetReturnValue().Set(Null(isolate_));
 			}
 			else
 			{
@@ -139,10 +142,10 @@ public:
 
 		auto data = External::New(isolate_, this);
 
-		out->Set(V8_KeywordString(isolate_, "Add"), Function::New(isolate_, add, data));
-		out->Set(V8_KeywordString(isolate_, "Remove"), Function::New(isolate_, remove, data));
-		out->Set(V8_KeywordString(isolate_, "Clear"), Function::New(isolate_, clear, data));
-		out->Set(V8_KeywordString(isolate_, "toJSON"), Function::New(isolate_, toJSON, data));
+		(void)out->Set(context, V8_KeywordString(isolate_, "Add"), Function::New(context, add, data).ToLocalChecked());
+		(void)out->Set(context, V8_KeywordString(isolate_, "Remove"), Function::New(context, remove, data).ToLocalChecked());
+		(void)out->Set(context, V8_KeywordString(isolate_, "Clear"), Function::New(context, clear, data).ToLocalChecked());
+		(void)out->Set(context, V8_KeywordString(isolate_, "toJSON"), Function::New(context, toJSON, data).ToLocalChecked());
 
 		WrappedObject.Reset(isolate_, out);
 
@@ -170,14 +173,14 @@ public:
 		Bind(DelegateObject, function);
 	}
 
-	UJavascriptDelegate* FindJavascriptDelegateByFunction(Local<Function> function)
+	UJavascriptDelegate* FindJavascriptDelegateByFunction(Local<Context> context, Local<Function> function)
 	{
 		HandleScope handle_scope(isolate_);
 
 		bool bWasSuccessful = false;
 		for (auto it = functions.CreateIterator(); it; ++it)
 		{
-			if (Local<Function>::New(isolate_, it.Value())->Equals(function))
+			if (Local<Function>::New(isolate_, it.Value())->Equals(context, function).ToChecked())
 			{
 				for (auto obj : DelegateObjects)
 				{
@@ -194,7 +197,7 @@ public:
 
 	void Remove(Local<Function> function)
 	{
-		auto obj = FindJavascriptDelegateByFunction(function);
+		auto obj = FindJavascriptDelegateByFunction(isolate_->GetCurrentContext(), function);
 
 		if (obj)
 		{
@@ -225,8 +228,12 @@ public:
 				FScriptDelegate Delegate;
 				Delegate.BindUFunction(DelegateObject, NAME_Fire);
 
+#if ENGINE_MINOR_VERSION > 22
+				p->AddDelegate(Delegate, WeakObject.Get());
+#else
 				auto Target = p->GetPropertyValuePtr_InContainer(WeakObject.Get());
 				Target->Add(Delegate);
+#endif
 			}
 			else if (auto p = Cast<UDelegateProperty>(Property))
 			{
@@ -251,9 +258,12 @@ public:
 			{
 				FScriptDelegate Delegate;
 				Delegate.BindUFunction(DelegateObject, NAME_Fire);
-
+#if ENGINE_MINOR_VERSION > 22
+				p->RemoveDelegate(Delegate, WeakObject.Get());
+#else
 				auto Target = p->GetPropertyValuePtr_InContainer(WeakObject.Get());
 				Target->Remove(Delegate);
+#endif
 			}
 			else if (auto p = Cast<UDelegateProperty>(Property))
 			{
@@ -309,7 +319,7 @@ public:
 			{
 				auto context = Local<Context>::New(isolate_, context_);
 
-				Context::Scope context_sopce(context);
+				Context::Scope context_scope(context);
 
 				CallJavascriptFunction(context, context->Global(), GetSignatureFunction(), func, Parms);
 			}
@@ -375,17 +385,18 @@ struct FDelegateManager : IDelegateManager
 	virtual Local<Value> GetProxy(Local<Object> This, UObject* Object, UProperty* Property) override
 	{
 		auto cache_id = V8_KeywordString(isolate_, FString::Printf(TEXT("$internal_%s"), *(Property->GetName())));
-		auto cached = This->Get(cache_id);
-		if (cached.IsEmpty() || cached->IsUndefined())
+		auto context_ = isolate_->GetCurrentContext();
+		auto maybe_cached = This->Get(context_, cache_id);
+		if (maybe_cached.IsEmpty() || maybe_cached.ToLocalChecked()->IsUndefined())
 		{
 			auto created = CreateDelegate(Object, Property);
 
-			This->Set(cache_id, created);
+			(void)This->Set(context_, cache_id, created);
 			return created;
 		}
 		else
 		{
-			return cached;
+			return maybe_cached.ToLocalChecked();
 		}
 	}
 };

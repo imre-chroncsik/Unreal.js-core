@@ -16,6 +16,6 @@ public class JavascriptUMG : ModuleRules
 			"RHI", 
             "UMG",
             "V8"
-        });        
+        });
 	}
 }
