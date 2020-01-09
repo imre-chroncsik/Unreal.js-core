@@ -666,7 +666,7 @@ public:
 					// Close connection
 					return -1;
 
-				auto channel = MakeShared<HttpResponseChannelImpl>(Wsi, isolate_);
+				auto channel = MakeShared<HttpResponseChannelImpl>(Wsi, isolate());
 				BufferInfo->Channel = channel;
 				lws_set_timeout(Wsi, NO_PENDING_TIMEOUT, 0);
 
@@ -758,7 +758,7 @@ public:
 				BufferInfo->Channel = MakeShared<ChannelImpl>(
 					WebSocketContext,
 					Wsi,
-					isolate_,
+					isolate(),
 					platform_,
 					v8inspector
 				);
