@@ -495,8 +495,8 @@ public:
 			TryCatch try_catch(isolate());
 
 			auto source = TEXT("'log error warn info void assert'.split(' ').forEach(x => { let o = console[x].bind(console); let y = $console[x].bind($console); console['$'+x] = o; console[x] = function () { y(...arguments); return o(...arguments); }})");
-			auto script = v8::Script::Compile(InContext, I.String(source)).ToLocalChecked();
-			auto result = script->Run(InContext);
+			auto script = v8::Script::Compile(context(), I.String(source)).ToLocalChecked();
+			auto result = script->Run(context());
 		}
 
 		UE_LOG(Javascript, Log, TEXT("open %s"), *DevToolsFrontEndUrl());
@@ -616,13 +616,19 @@ public:
 	{
 		HandleScope handle_scope(isolate());
 		FIsolateHelper I(isolate());
-		auto global = Local<Value>::Cast(context()->Global())->ToObject();
-		auto myFunctionValueMaybe = global->Get(context(), I.Keyword("$debuggerDidAttach"));
-		if (myFunctionValueMaybe.IsEmpty())
+		
+		auto maybeGlobal = Local<Value>::Cast(context()->Global())->ToObject(context());
+		if (maybeGlobal.IsEmpty())
+			return;
+		auto global = maybeGlobal.ToLocalChecked();
+		
+		auto maybeMyFunctionValue = global->Get(context(), I.Keyword("$debuggerDidAttach"));
+		if (maybeMyFunctionValue.IsEmpty())
 			return; 
-		auto myFunctionValue = myFunctionValueMaybe.ToLocalChecked(); 
+		auto myFunctionValue = maybeMyFunctionValue.ToLocalChecked();
 		if (myFunctionValue->IsNullOrUndefined())
-			return; 
+			return;
+		
 		auto myFunction = myFunctionValue.As<v8::Function>(); 
 		auto result = myFunction->Call(context(), global, 0, nullptr); 
 	}

@@ -1,4 +1,7 @@
-﻿#include "JavascriptLibrary.h"
+#include "JavascriptLibrary.h"
+
+PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
+
 #include "Engine/DynamicBlueprintBinding.h"
 #include "JavascriptContext.h"
 #include "IV8.h"
@@ -946,3 +949,5 @@ FText UJavascriptLibrary::UpdateLocalizationText(const FJavascriptText& JText, c
 	return FText::FromString(JText.String);
 #endif
 }
+
+PRAGMA_ENABLE_SHADOW_VARIABLE_WARNINGS
