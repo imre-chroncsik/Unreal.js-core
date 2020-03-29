@@ -44,13 +44,23 @@ namespace v8
 			}
 		}
 
-		TryCatch try_catch(isolate);		
+		TryCatch try_catch(isolate);
 
-		auto value = func->Call(This, argc, argv);
+		Isolate::AllowJavascriptExecutionScope allow_script(isolate);
+
+		auto maybeValue = func->Call(context, This, argc, argv);
 
 		if (try_catch.HasCaught())
 		{
-			FJavascriptContext::FromV8(context)->UncaughtException(FV8Exception::Report(try_catch));
+			FJavascriptContext::FromV8(context)->UncaughtException(FV8Exception::Report(isolate, try_catch));
+		}
+
+		FIsolateHelper I(isolate);
+
+		if (maybeValue.IsEmpty())
+		{
+			I.Throw(TEXT("..."));
+			return;
 		}
 
 		bool bHasAnyOutParams = false;
@@ -68,16 +78,17 @@ namespace v8
 			}
 		}
 
+		auto value = maybeValue.ToLocalChecked();
+
 		if (bHasAnyOutParams)
 		{
-			FIsolateHelper I(isolate);
-			if (value.IsEmpty() || !value->IsObject())
+			if (!value->IsObject())
 			{
 				I.Throw(TEXT("..."));
 				return;
 			}
 
-			auto Object = value->ToObject();
+			auto Object = value->ToObject(context).ToLocalChecked();
 
 			// Iterate over parameters again
 			for (TFieldIterator<UProperty> It(SignatureFunction); It; ++It)
@@ -89,19 +100,22 @@ namespace v8
 				// pass return parameter as '$'
 				if (PropertyFlags & CPF_ReturnParm)
 				{
-					auto sub_value = Object->Get(I.Keyword("$"));
+					auto sub_value = Object->Get(context, I.Keyword("$"));
 
-					WriteProperty(isolate, ReturnParam, Buffer, sub_value, FNoPropertyOwner());						
+					if (!sub_value.IsEmpty())
+					{
+						WriteProperty(isolate, ReturnParam, Buffer, sub_value.ToLocalChecked(), FNoPropertyOwner());
+					}
 				}
 				// rejects 'const T&' and pass 'T&' as its name
 				else if ((PropertyFlags & (CPF_ConstParm | CPF_OutParm)) == CPF_OutParm)
 				{
-					auto sub_value = Object->Get(I.Keyword(Param->GetName()));
+					auto sub_value = Object->Get(context, I.Keyword(Param->GetName()));
 
 					if (!sub_value.IsEmpty())
 					{
 						// value can be null if isolate is in trouble
-						WriteProperty(isolate, Param, Buffer, sub_value, FNoPropertyOwner());
+						WriteProperty(isolate, Param, Buffer, sub_value.ToLocalChecked(), FNoPropertyOwner());
 					}						
 				}
 			}			

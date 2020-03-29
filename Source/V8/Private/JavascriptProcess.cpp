@@ -1,6 +1,9 @@
-#include "JavascriptProcess.h"
+﻿#include "JavascriptProcess.h"
 
-PRAGMA_DISABLE_OPTIMIZATION
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
+#endif
+//PRAGMA_DISABLE_OPTIMIZATION
 
 UJavascriptProcess::UJavascriptProcess(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
@@ -155,9 +158,7 @@ void UJavascriptProcess::SetEnvironmentVar(const FString& VarName, const FString
 
 FString UJavascriptProcess::GetEnvironmentVar(const FString& VarName)
 {
-	TCHAR Result[4096];
-	FPlatformMisc::GetEnvironmentVariable(*VarName, Result, ARRAY_COUNT(Result));
-	return Result;
+	return FPlatformMisc::GetEnvironmentVariable(*VarName);
 }
 
 void UJavascriptProcess::LaunchURL(const FString& URL, const FString& Parms, FString& Error)
@@ -190,4 +191,4 @@ FString UJavascriptProcess::GetString(const FString& Key, bool bFlag)
 	return FString();
 }
 
-PRAGMA_ENABLE_OPTIMIZATION
+//PRAGMA_ENABLE_OPTIMIZATION

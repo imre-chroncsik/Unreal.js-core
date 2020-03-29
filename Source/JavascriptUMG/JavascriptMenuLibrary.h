@@ -13,31 +13,6 @@
 #include "UObject/TextProperty.h"
 #include "JavascriptMenuLibrary.generated.h"
 
-UENUM()
-namespace EJavasrciptUserInterfaceActionType
-{
-	enum Type
-	{
-		/** An action which should not be associated with a user interface action */
-		None,
-
-		/** Momentary buttons or menu items.  These support enable state, and execute a delegate when clicked. */
-		Button,
-
-		/** Toggleable buttons or menu items that store on/off state.  These support enable state, and execute a delegate when toggled. */
-		ToggleButton,
-
-		/** Radio buttons are similar to toggle buttons in that they are for menu items that store on/off state.  However they should be used to indicate that menu items in a group can only be in one state */
-		RadioButton,
-
-		/** Similar to Button but will display a readonly checkbox next to the item. */
-		Check,
-
-		/** Similar to Button but has the checkbox area collapsed */
-		CollapsedButton
-	};
-}
-
 USTRUCT(BlueprintType)
 struct FJavascriptUICommandInfo
 {
@@ -69,6 +44,9 @@ struct FJavascriptUICommand
 
 	UPROPERTY(BlueprintReadWrite, Category = "Javascript | Editor")
 	FJavascriptUICommandInfo CommandInfo;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Javascript | Editor")
+	FString IconStyleName;
 };
 
 USTRUCT(BlueprintType)
@@ -192,7 +170,7 @@ public:
 	static FJavascriptExtender Combine(const TArray<FJavascriptExtender>& Extenders);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-	static void BeginSection(FJavascriptMenuBuilder& Builder, FName InExtensionHook);
+	static void BeginSection(FJavascriptMenuBuilder& Builder, FName InExtensionHook, FText MenuHeadingText);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void EndSection(FJavascriptMenuBuilder& Builder);
@@ -211,6 +189,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void AddMenuEntry(FJavascriptMenuBuilder& Builder, UJavascriptMenuContext* Object);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void AddSubMenu(FJavascriptMenuBuilder& Builder, const FText& Label, const FText& ToolTip, const bool bInOpenSubMenuOnClick, FJavascriptFunction Function);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void AddMenuByCommands(FJavascriptMenuBuilder& Builder, UJavascriptUICommands* UICommands);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void AddWidget(FJavascriptMenuBuilder& Builder, UWidget* Widget, const FText& Label, bool bNoIndent, FName InTutorialHighlightName, bool bSearchable);

@@ -17,8 +17,7 @@ FText UJavascriptToolbarButtonContext::Public_OnGetLabel()
 
 void UJavascriptToolbarButtonContext::Public_OnExecuteAction(UObject* EditingObject)
 {
-	if (OnExecuteAction.IsBound())
-		OnExecuteAction.Execute(EditingObject);
+	OnExecuteAction.ExecuteIfBound(EditingObject);
 }
 
 bool UJavascriptToolbarButtonContext::Public_OnCanExecuteAction(UObject* EditingObject)

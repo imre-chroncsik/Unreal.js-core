@@ -1,8 +1,9 @@
-#include "JavascriptGraphEditorLibrary.h"
+﻿#include "JavascriptGraphEditorLibrary.h"
 #include "JavascriptGraphConnectionDrawingPolicy.h"
 #include "JavascriptGraphEdNode.h"
+#include "JavascriptGraphEdNodeCreator.h"
 #include "SJavascriptGraphEdNode.h"
-#include "Editor/GraphEditor/Public/SGraphPanel.h"
+#include "SGraphPanel.h"
 
 #define LOCTEXT_NAMESPACE "JavascriptGraph"
 
@@ -27,9 +28,18 @@ FJavascriptConnectionParams::operator FConnectionParams () const
 FJavascriptNodeCreator UJavascriptGraphEditorLibrary::NodeCreator(UJavascriptGraphEdGraph* Graph, bool bSelectNewNode/* = true*/)
 {
 	FJavascriptNodeCreator Out;
-	auto Creator = new FGraphNodeCreator<UJavascriptGraphEdNode>(*Graph);
-	Out.Instance = MakeShareable(reinterpret_cast<FGraphNodeCreator<UEdGraphNode>*>(Creator));
+	auto Creator = new FDefaultJavascriptGraphNodeCreator(Graph);
+	Out.Instance = MakeShareable(static_cast<IJavascriptGraphNodeCreator*>(Creator));
 	Out.Node = Creator->CreateNode(bSelectNewNode);
+	return Out;
+}
+
+FJavascriptNodeCreator UJavascriptGraphEditorLibrary::CustomNodeCreator(UJavascriptGraphEdGraph* Graph)
+{
+	FJavascriptNodeCreator Out;
+	auto Creator = new FCustomJavascriptGraphNodeCreator(Graph);
+	Out.Instance = MakeShareable(static_cast<IJavascriptGraphNodeCreator*>(Creator));
+	Out.Node = Creator->CreateNode(false);
 	return Out;
 }
 
@@ -45,42 +55,42 @@ bool UJavascriptGraphEditorLibrary::SetNodeMetaData(UEdGraphSchema* Schema, UEdG
 
 void UJavascriptGraphEditorLibrary::MakeLinkTo(FJavascriptEdGraphPin A, FJavascriptEdGraphPin B)
 {
-	if (A.GraphPin && B.GraphPin)
+	if (A.IsValid() && B.IsValid())
 	{
-		A.GraphPin->MakeLinkTo(B.GraphPin);
-	}	
+		A->MakeLinkTo(B);
+	}
 }
 
 void UJavascriptGraphEditorLibrary::TryConnection(UEdGraphSchema* Schema, FJavascriptEdGraphPin A, FJavascriptEdGraphPin B)
 {
-	if (A.GraphPin && B.GraphPin)
+	if (A.IsValid() && B.IsValid())
 	{
-		Schema->TryCreateConnection(A.GraphPin, B.GraphPin);
+		Schema->TryCreateConnection(A, B);
 	}
 }
 
 void UJavascriptGraphEditorLibrary::BreakLinkTo(FJavascriptEdGraphPin A, FJavascriptEdGraphPin B)
 {
-	if (A.GraphPin && B.GraphPin)
+	if (A.IsValid() && B.IsValid())
 	{
-		A.GraphPin->BreakLinkTo(B.GraphPin);
+		A->BreakLinkTo(B);
 	}
 }
 
 void UJavascriptGraphEditorLibrary::BreakAllPinLinks(FJavascriptEdGraphPin A)
 {
-	if (A.GraphPin)
+	if (A.IsValid())
 	{
-		A.GraphPin->BreakAllPinLinks();
+		A->BreakAllPinLinks(true);
 	}
 }
 
 FEdGraphPinType UJavascriptGraphEditorLibrary::GetPinType(FJavascriptEdGraphPin A)
 {
 	FEdGraphPinType PinType;
-	if (A.GraphPin)
+	if (A.IsValid())
 	{
-		PinType = A.GraphPin->PinType;
+		PinType = A->PinType;
 	}
 
 	return PinType;
@@ -89,10 +99,9 @@ FEdGraphPinType UJavascriptGraphEditorLibrary::GetPinType(FJavascriptEdGraphPin 
 EJavascriptPinContainerType::Type UJavascriptGraphEditorLibrary::GetPinContainerType(FJavascriptEdGraphPin A)
 {
 	EJavascriptPinContainerType::Type ContainerType = EJavascriptPinContainerType::Type::None;
-	if (A.GraphPin)
+	if (A.IsValid())
 	{
-		
-		ContainerType = (EJavascriptPinContainerType::Type)(int32)(A.GraphPin->PinType.ContainerType);
+		ContainerType = (EJavascriptPinContainerType::Type)(int32)(A->PinType.ContainerType);
 	}
 
 	return ContainerType;
@@ -100,9 +109,17 @@ EJavascriptPinContainerType::Type UJavascriptGraphEditorLibrary::GetPinContainer
 
 void UJavascriptGraphEditorLibrary::SetPinType(FJavascriptEdGraphPin Pin, FEdGraphPinType PinType)
 {
-	if (Pin.GraphPin)
+	if (Pin.IsValid())
 	{
-		Pin.GraphPin->PinType = PinType;
+		Pin->PinType = PinType;
+	}
+}
+
+void UJavascriptGraphEditorLibrary::SetPinContainerType(FJavascriptEdGraphPin Pin, EJavascriptPinContainerType::Type ContainerType)
+{
+	if (Pin.IsValid())
+	{
+		Pin->PinType.ContainerType = (EPinContainerType)(uint8)ContainerType;
 	}
 }
 
@@ -113,56 +130,99 @@ FJavascriptEdGraphPin UJavascriptGraphEditorLibrary::FindPin(UEdGraphNode* Node,
 
 FName UJavascriptGraphEditorLibrary::GetPinName(FJavascriptEdGraphPin A)
 {
-	return A.GraphPin ? A.GraphPin->PinName : TEXT("");
+	return A.IsValid() ? A->PinName : NAME_None;
 }
 
 void UJavascriptGraphEditorLibrary::SetPinInfo(FJavascriptEdGraphPin A, FName InPinName, FString InPinToolTip)
 {
-	if (A.GraphPin)
+	if (A.IsValid())
 	{
-		A.GraphPin->PinName = InPinName;
-		A.GraphPin->PinToolTip = InPinToolTip;
+		A->PinName = InPinName;
+		A->PinToolTip = InPinToolTip;
 	}
 }
 
 FGuid UJavascriptGraphEditorLibrary::GetPinGUID(FJavascriptEdGraphPin A)
 {
 	FGuid GUID;
-	if (A.GraphPin)
+	if (A.IsValid())
 	{
-		GUID = A.GraphPin->PinId;
+		GUID = A->PinId;
 	}
 	return GUID;
 }
 
+int32 UJavascriptGraphEditorLibrary::GetPinIndex(FJavascriptEdGraphPin A)
+{
+	UEdGraphNode* Node = A.IsValid() ? A->GetOwningNode() : nullptr;
+	return (Node != nullptr) ? Node->GetPinIndex(A) : INDEX_NONE;
+}
+
+FJavascriptEdGraphPin UJavascriptGraphEditorLibrary::GetParentPin(FJavascriptEdGraphPin A)
+{
+	return { A.IsValid() ? A->ParentPin : nullptr };
+}
+
+TArray<FJavascriptEdGraphPin> UJavascriptGraphEditorLibrary::GetSubPins(FJavascriptEdGraphPin A)
+{
+	return A.IsValid() ? TransformPins(A->SubPins) : TArray<FJavascriptEdGraphPin>();
+}
+
+void UJavascriptGraphEditorLibrary::SetParentPin(FJavascriptEdGraphPin A, FJavascriptEdGraphPin Parent)
+{
+	if (A.IsValid())
+	{
+		if (A->ParentPin != nullptr)
+		{
+			return;
+		}
+
+		A->ParentPin = Parent;
+
+		if (Parent.IsValid())
+		{
+			Parent->SubPins.AddUnique(A);
+		}
+	}
+}
+
 bool UJavascriptGraphEditorLibrary::IsValid(FJavascriptEdGraphPin A)
 {
-	return A.GraphPin != nullptr;
+	return A.IsValid();
+}
+
+void UJavascriptGraphEditorLibrary::SetPinHidden(FJavascriptEdGraphPin A, bool bHidden)
+{
+	if (A.IsValid())
+	{
+		A->bHidden = bHidden;
+	}
+}
+
+bool UJavascriptGraphEditorLibrary::IsPinHidden(FJavascriptEdGraphPin A)
+{
+	return (A.IsValid() && A->bHidden);
 }
 
 class UEdGraphNode* UJavascriptGraphEditorLibrary::GetOwningNode(FJavascriptEdGraphPin A)
 {
-	return A.GraphPin ? A.GraphPin->GetOwningNode() : nullptr;
+	return A.IsValid() ? A->GetOwningNode() : nullptr;
 }
 
 EEdGraphPinDirection UJavascriptGraphEditorLibrary::GetDirection(FJavascriptEdGraphPin A)
 {
-	return A.GraphPin ? ((EEdGraphPinDirection)A.GraphPin->Direction) : EEdGraphPinDirection::EGPD_Input;
-}
-
-TArray<FJavascriptEdGraphPin> TransformPins(const TArray<UEdGraphPin*>& Pins)
-{
-	TArray<FJavascriptEdGraphPin> Out;
-	for (auto x : Pins)
-	{
-		Out.Add(FJavascriptEdGraphPin{ x });
-	}
-	return Out;
+	return A.IsValid() ? ((EEdGraphPinDirection)A->Direction) : EEdGraphPinDirection::EGPD_Input;
 }
 
 TArray<FJavascriptEdGraphPin> UJavascriptGraphEditorLibrary::GetLinkedTo(FJavascriptEdGraphPin A)
 {
-	return TransformPins(A.GraphPin->LinkedTo);
+	return TransformPins(A->LinkedTo);
+}
+
+// Using GetLinkedTo to count number of linked pins cause unnecessary call to TransformPins.
+int32 UJavascriptGraphEditorLibrary::GetLinkedPinNum(FJavascriptEdGraphPin A)
+{
+	return A->LinkedTo.Num();
 }
 
 TArray<FJavascriptEdGraphPin> UJavascriptGraphEditorLibrary::GetPins(UEdGraphNode* Node)
@@ -181,13 +241,21 @@ FJavascriptArrangedWidget UJavascriptGraphEditorLibrary::FindPinGeometries(FJava
 FJavascriptPinWidget UJavascriptGraphEditorLibrary::FindPinToPinWidgetMap(FJavascriptDetermineLinkGeometryContainer Container, FJavascriptEdGraphPin Pin)
 {
 	FJavascriptPinWidget Widget = FJavascriptPinWidget();
-	
-	TSharedRef<SGraphPin>* SGraphPinHandle = Container.PinToPinWidgetMap->Find(Pin.GraphPin);
+#if ENGINE_MINOR_VERSION > 22
+	TSharedPtr<SGraphPin>* SGraphPinHandle = Container.PinToPinWidgetMap->Find(Pin);
 	if (SGraphPinHandle)
 	{
-		TSharedRef<SWidget> SWidgetHandle  = static_cast<SWidget&>(SGraphPinHandle->Get()).AsShared();
+		TSharedRef<SWidget> SWidgetHandle = static_cast<SWidget&>(*SGraphPinHandle->Get()).AsShared();
 		Widget.Handle = &SWidgetHandle;
 	}
+#else
+	TSharedRef<SGraphPin>* SGraphPinHandle = Container.PinToPinWidgetMap->Find(Pin);
+	if (SGraphPinHandle)
+	{
+		TSharedRef<SWidget> SWidgetHandle = static_cast<SWidget&>(SGraphPinHandle->Get()).AsShared();
+		Widget.Handle = &SWidgetHandle;
+	}
+#endif
 
 	return Widget;
 }
@@ -248,7 +316,7 @@ bool UJavascriptGraphEditorLibrary::IsContainedHoveredPins(FJavascriptGraphConne
 	FJavascriptGraphConnectionDrawingPolicy* DrawingPolicy = Container.Handle;
 	if (DrawingPolicy)
 	{
-		return DrawingPolicy->GetHoveredPins().Contains(Pin.GraphPin);
+		return DrawingPolicy->GetHoveredPins().Contains(Pin.Get());
 	}
 
 	return false;
@@ -259,7 +327,7 @@ void UJavascriptGraphEditorLibrary::ApplyHoverDeemphasis(FJavascriptGraphConnect
 	FJavascriptGraphConnectionDrawingPolicy* DrawingPolicy = Container.Handle;
 	if (DrawingPolicy)
 	{
-		DrawingPolicy->ApplyHoverDeemphasis(OutputPin.GraphPin, InputPin.GraphPin, Thickness, WireColor);
+		DrawingPolicy->ApplyHoverDeemphasis(OutputPin, InputPin, Thickness, WireColor);
 	}
 }
 
@@ -269,7 +337,7 @@ void UJavascriptGraphEditorLibrary::DetermineWiringStyle(FJavascriptGraphConnect
 	if (DrawingPolicy)
 	{
 		FConnectionParams X = Params;
-		DrawingPolicy->DetermineWiringStyle(OutputPin.GraphPin, InputPin.GraphPin, X);
+		DrawingPolicy->DetermineWiringStyle(OutputPin, InputPin, X);
 		Params = X;
 	}
 }
@@ -286,24 +354,47 @@ void UJavascriptGraphEditorLibrary::DrawSplineWithArrow(FJavascriptGraphConnecti
 void UJavascriptGraphEditorLibrary::AddPinToHoverSet(const FJavascriptSlateEdNode& InSlateEdNode, FJavascriptEdGraphPin Pin)
 {
 	SJavascriptGraphEdNode* SlateEdNode = InSlateEdNode.Handle;
-	if (SlateEdNode && Pin.GraphPin)
+	if (SlateEdNode && Pin.IsValid())
 	{
-		SlateEdNode->GetOwnerPanel()->AddPinToHoverSet(Pin.GraphPin);
+		SlateEdNode->GetOwnerPanel()->AddPinToHoverSet(Pin);
 	}
 }
 
 void UJavascriptGraphEditorLibrary::RemovePinFromHoverSet(const FJavascriptSlateEdNode& InSlateEdNode, FJavascriptEdGraphPin Pin)
 {
 	SJavascriptGraphEdNode* SlateEdNode = InSlateEdNode.Handle;
-	if (SlateEdNode && Pin.GraphPin)
+	if (SlateEdNode && Pin.IsValid())
 	{
-		SlateEdNode->GetOwnerPanel()->RemovePinFromHoverSet(Pin.GraphPin);
+		SlateEdNode->GetOwnerPanel()->RemovePinFromHoverSet(Pin);
 	}
 }
 
 void UJavascriptGraphEditorLibrary::ResizeNode(UEdGraphNode * Node, const FVector2D & NewSize)
 {
 	Node->ResizeNode(NewSize);
+}
+
+FJavascriptSlateWidget UJavascriptGraphEditorLibrary::GetOwnerPanel(UJavascriptGraphEdNode* Node)
+{
+	FJavascriptSlateWidget Out;
+
+	TSharedPtr<SJavascriptGraphEdNode> SlateNode = Node->GetNodeSlateWidget();
+	if (SlateNode.IsValid())
+	{
+		Out.Widget = SlateNode->GetOwnerPanel();
+	}
+
+	return Out;
+}
+
+TArray<FJavascriptEdGraphPin> UJavascriptGraphEditorLibrary::TransformPins(const TArray<UEdGraphPin*>& Pins)
+{
+	TArray<FJavascriptEdGraphPin> Out;
+	for (auto x : Pins)
+	{
+		Out.Add(FJavascriptEdGraphPin{ x });
+	}
+	return Out;
 }
 
 #undef LOCTEXT_NAMESPACE

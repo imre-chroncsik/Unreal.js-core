@@ -3,6 +3,8 @@
 #include "JavascriptToolbarButtonContext.h"
 #include "Components/Widget.h"
 #include "Framework/Commands/GenericCommands.h"
+#include "JavascriptUICommands.h"
+#include "../../Launch/Resources/Version.h"
 
 FJavascriptUICommandList UJavascriptMenuLibrary::CreateUICommandList()
 {
@@ -45,7 +47,7 @@ void UJavascriptMenuLibrary::CreateMenuBarBuilder(FJavascriptUICommandList Comma
 	Function.Execute(FJavascriptMenuBuilder::StaticStruct(), &Out);
 }
 
-void UJavascriptMenuLibrary::BeginSection(FJavascriptMenuBuilder& Builder, FName InExtensionHook)
+void UJavascriptMenuLibrary::BeginSection(FJavascriptMenuBuilder& Builder, FName InExtensionHook, FText MenuHeadingText)
 {
 	if (Builder.ToolBar)
 	{
@@ -53,7 +55,7 @@ void UJavascriptMenuLibrary::BeginSection(FJavascriptMenuBuilder& Builder, FName
 	}
 	else if (Builder.Menu)
 	{
-		Builder.Menu->BeginSection(InExtensionHook);
+		Builder.Menu->BeginSection(InExtensionHook, MenuHeadingText);
 	}
 }
 
@@ -134,11 +136,51 @@ void UJavascriptMenuLibrary::AddMenuEntry(FJavascriptMenuBuilder& Builder, UJava
 		FUIAction DefaultAction;
 		DefaultAction.CanExecuteAction = FCanExecuteAction::CreateUObject(Object, &UJavascriptMenuContext::Public_CanExecute);
 		DefaultAction.ExecuteAction = FExecuteAction::CreateUObject(Object, &UJavascriptMenuContext::Public_Execute);
+		DefaultAction.GetActionCheckState = FGetActionCheckState::CreateUObject(Object, &UJavascriptMenuContext::Public_GetActionCheckState);
+#if ENGINE_MINOR_VERSION > 22
+		const EUserInterfaceActionType CommandType = EUserInterfaceActionType(Object->ActionType.GetValue());
+#else
+		const EUserInterfaceActionType::Type CommandType = EUserInterfaceActionType::Type(Object->ActionType.GetValue());
+#endif
 		Builder.Menu->AddMenuEntry(
 			Object->Description,
 			Object->ToolTip,
 			Object->Icon,
-			DefaultAction);
+			DefaultAction,
+			NAME_None,
+			CommandType
+		);
+	}
+}
+
+void UJavascriptMenuLibrary::AddSubMenu(FJavascriptMenuBuilder& Builder, const FText& Label, const FText& ToolTip, const bool bInOpenSubMenuOnClick, FJavascriptFunction Function)
+{
+	if (Builder.Menu)
+	{
+		TSharedPtr<FJavascriptFunction> Copy(new FJavascriptFunction);
+		*(Copy.Get()) = Function;
+		Builder.Menu->AddSubMenu(
+			Label,
+			ToolTip,
+			FNewMenuDelegate::CreateLambda([=](FMenuBuilder& SubMenuBuilder) {
+				FJavascriptMenuBuilder Out;
+				Out.MultiBox = Out.Menu = &SubMenuBuilder;
+				Copy->Execute(FJavascriptMenuBuilder::StaticStruct(), &Out);
+			}),
+			bInOpenSubMenuOnClick,
+			FSlateIcon()
+		);
+	}
+}
+
+void UJavascriptMenuLibrary::AddMenuByCommands(FJavascriptMenuBuilder& Builder, UJavascriptUICommands* UICommands)
+{
+	if (Builder.Menu && UICommands)
+	{
+		for (FJavascriptUICommandInfo CommandInfo : UICommands->CommandInfos)
+		{
+			Builder.Menu->AddMenuEntry(CommandInfo.Handle);
+		}
 	}
 }
 
@@ -210,9 +252,14 @@ FJavascriptUICommandInfo UJavascriptMenuLibrary::UI_COMMAND_Function(FJavascript
 	const FString DotOutCommandName = FString::Printf(TEXT(".%s"), *info.Id);
 	const TCHAR* FriendlyName = *info.FriendlyName;
 	const TCHAR* InDescription = *info.Description;
+#if ENGINE_MINOR_VERSION > 22
+	const EUserInterfaceActionType CommandType = EUserInterfaceActionType(info.ActionType.GetValue());
+#else
 	const EUserInterfaceActionType::Type CommandType = EUserInterfaceActionType::Type(info.ActionType.GetValue());
+#endif
 	const FInputChord& InDefaultChord = info.DefaultChord;
 	const FInputChord& InAlternateDefaultChord = FInputChord();
+	const FString IconStyleName = *info.IconStyleName;
 
 	static const FString UICommandsStr(TEXT("UICommands"));
 	const FString Namespace = OutSubNamespace && FCString::Strlen(OutSubNamespace) > 0 ? UICommandsStr + TEXT(".") + OutSubNamespace : UICommandsStr;
@@ -226,7 +273,7 @@ FJavascriptUICommandInfo UJavascriptMenuLibrary::UI_COMMAND_Function(FJavascript
 		OutCommandName,
 		FInternationalization::ForUseOnlyByLocMacroAndGraphNodeTextLiterals_CreateText(FriendlyName, *Namespace, OutCommandName),
 		FInternationalization::ForUseOnlyByLocMacroAndGraphNodeTextLiterals_CreateText(InDescription, *Namespace, *OutCommandNameUnderscoreTooltip),
-		FSlateIcon(ThisBindingContext->GetStyleSetName(), ISlateStyle::Join(FName(*OrignContextName), TCHAR_TO_ANSI(*DotOutCommandName))),
+		FSlateIcon(ThisBindingContext->GetStyleSetName(), IconStyleName.IsEmpty() ? ISlateStyle::Join(FName(*OrignContextName), TCHAR_TO_ANSI(*DotOutCommandName)) : FName(*IconStyleName)),
 		CommandType,
 		InDefaultChord,
 		InAlternateDefaultChord

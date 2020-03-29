@@ -1,11 +1,12 @@
 #include "Translator.h"
 #include "Engine/UserDefinedStruct.h"
+#include "Launch/Resources/Version.h"
 
 namespace v8
 {
-	UObject* UObjectFromV8(Local<Value> Value)
+	UObject* UObjectFromV8(Local<Context> context, Local<Value> Value)
 	{
-		uint8* Memory = RawMemoryFromV8(Value);
+		uint8* Memory = RawMemoryFromV8(context, Value);
 		if (Memory)
 		{
 			auto uobj = reinterpret_cast<UObject*>(Memory);
@@ -18,14 +19,21 @@ namespace v8
 		return nullptr;
 	}
 
-	uint8* RawMemoryFromV8(Local<Value> Value)
+	uint8* RawMemoryFromV8(Local<Context> context, Local<Value> Value)
 	{
 		if (Value.IsEmpty() || !Value->IsObject() || Value->IsUndefined() || Value->IsNull())
 		{
 			return nullptr;
 		}
 
-		auto v8_obj = Value->ToObject();
+		auto maybe_obj = Value->ToObject(context);
+
+		if (maybe_obj.IsEmpty())
+		{
+			return nullptr;
+		}
+
+		auto v8_obj = maybe_obj.ToLocalChecked();
 		if (v8_obj->InternalFieldCount() == 0)
 		{
 			return nullptr;
@@ -40,18 +48,25 @@ namespace v8
 			return nullptr;
 		}
 
-		auto v8_obj = Value->ToObject();
-		if (v8_obj.IsEmpty())
+		auto context = isolate_->GetCurrentContext();
+		auto maybe_v8_obj = Value->ToObject(context);
+		if (maybe_v8_obj.IsEmpty())
 		{
 			return nullptr;
 		}
 
+		auto v8_obj = maybe_v8_obj.ToLocalChecked();
+
 		if (v8_obj->IsFunction())
 		{
-			auto vv = v8_obj->Get(V8_KeywordString(isolate_, "StaticClass"));
-			if (!vv.IsEmpty())
+			auto maybe_vv = v8_obj->Get(context, V8_KeywordString(isolate_, "StaticClass"));
+			if (!maybe_vv.IsEmpty())
 			{
-				v8_obj = vv->ToObject();
+				auto maybe_v8obj = maybe_vv.ToLocalChecked()->ToObject(context);
+				if (!maybe_v8obj.IsEmpty())
+				{
+					v8_obj = maybe_v8obj.ToLocalChecked();
+				}
 			}
 		}
 
@@ -73,38 +88,43 @@ namespace v8
 
 	Local<String> V8_String(Isolate* isolate, const FString& String)
 	{
-		return String::NewFromUtf8(isolate, TCHAR_TO_UTF8(*String));
+		auto maybe_str = String::NewFromUtf8(isolate, TCHAR_TO_UTF8(*String));
+		return maybe_str.IsEmpty() ? v8::String::Empty(isolate) : maybe_str.ToLocalChecked();
 	}
 
 	Local<String> V8_String(Isolate* isolate, const char* String)
 	{
-		return String::NewFromUtf8(isolate, String);
+		auto maybe_str = String::NewFromUtf8(isolate, String);
+		return maybe_str.IsEmpty() ? v8::String::Empty(isolate) : maybe_str.ToLocalChecked();
 	}
 
 	Local<String> V8_KeywordString(Isolate* isolate, const FString& String)
 	{
-		return String::NewFromUtf8(isolate, TCHAR_TO_UTF8(*String), String::kInternalizedString);
+		auto maybe_str = String::NewFromUtf8(isolate, TCHAR_TO_UTF8(*String), NewStringType::kInternalized);
+		return maybe_str.IsEmpty() ? v8::String::Empty(isolate) : maybe_str.ToLocalChecked();
 	}
 
 	Local<String> V8_KeywordString(Isolate* isolate, const char* String)
 	{
-		return String::NewFromUtf8(isolate, String, String::kInternalizedString);
+		auto maybe_str = String::NewFromUtf8(isolate, String, NewStringType::kInternalized);
+		return maybe_str.IsEmpty() ? v8::String::Empty(isolate) : maybe_str.ToLocalChecked();
 	}
 
-	FString StringFromV8(Local<Value> Value)
+	FString StringFromV8(Isolate* isolate, Local<Value> Value)
 	{
-		return UTF8_TO_TCHAR(*String::Utf8Value(Value));
+		return UTF8_TO_TCHAR(*String::Utf8Value(isolate, Value));
 	}
 
 	FString StringFromArgs(const FunctionCallbackInfo<v8::Value>& args, int StartIndex)
 	{
-		HandleScope handle_scope(args.GetIsolate());
+		auto isolate = args.GetIsolate();
+		HandleScope handle_scope(isolate);
 
 		TArray<FString> ArgStrings;
 
 		for (int Index = StartIndex; Index < args.Length(); Index++)
 		{
-			ArgStrings.Add(StringFromV8(args[Index]));
+			ArgStrings.Add(StringFromV8(isolate, args[Index]));
 		}
 
 		return FString::Join(ArgStrings, TEXT(" "));
@@ -119,7 +139,11 @@ namespace v8
 		{
 			if (auto s = Cast<UUserDefinedStruct>(Struct))
 			{
+#if ENGINE_MINOR_VERSION > 22
+				return s->GetAuthoredNameForField(Property);
+#else
 				return s->PropertyNameToDisplayName(name);
+#endif
 			}
 		}
 		return name.ToString();
@@ -133,7 +157,11 @@ namespace v8
 		{
 			if (auto s = Cast<UUserDefinedStruct>(Struct))
 			{
+#if ENGINE_MINOR_VERSION > 22
+				return s->GetAuthoredNameForField(Property) == NameToMatch.ToString();
+#else
 				return s->PropertyNameToDisplayName(name) == NameToMatch.ToString();
+#endif
 			}
 		}
 		return name == NameToMatch;

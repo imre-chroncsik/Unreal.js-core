@@ -332,7 +332,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static bool HasAnyPackageFlags(UPackage* Package, int32 Flags);
 
-	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript", meta = (BlueprintInternalUseOnly = "true"))
 	static FString GetName(UObject* Object);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
@@ -385,7 +385,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static FString GetDir(UObject* Object, FString WhichDir);
-		
+	
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	static FString ConvertRelativePathToFull(UObject* Object, FString RelativePath);
+
 	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
 	static bool HasUndo(UEngine* Engine);
 
@@ -482,7 +485,7 @@ public:
 	static float GetLastRenderTime(AActor* Actor);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-	static UEnum* CreateEnum(UObject* Outer, FName Name, TArray<FName> DisplayNames);
+	static UEnum* CreateEnum(UObject* Outer, FName Name, TArray<FName> DisplayNames, const TArray<FString>& Flags);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void MarkRenderStateDirty(UActorComponent* Component);
@@ -608,7 +611,4 @@ public:
 
 		P_FINISH;
 	}
-
-//	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-//	static bool RemoveDisplayString(FJavascriptText& JavascriptText);
 };

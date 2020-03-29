@@ -1,4 +1,7 @@
 #include "JavascriptLibrary.h"
+
+PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
+
 #include "Engine/DynamicBlueprintBinding.h"
 #include "JavascriptContext.h"
 #include "IV8.h"
@@ -13,6 +16,8 @@
 #include "UObject/MetaData.h"
 #include "Engine/Engine.h"
 #include "V8PCH.h"
+#include "Translator.h"
+#include "StructMemoryInstance.h"
 #include "Internationalization/TextNamespaceUtil.h"
 #include "Internationalization/TextPackageNamespaceUtil.h"
 #include "Serialization/TextReferenceCollector.h"
@@ -51,6 +56,18 @@ bool UJavascriptLibrary::ResolveIp(FString HostName, FString& OutIp)
 {
 	auto SocketSub = ISocketSubsystem::Get();
 	TSharedRef<FInternetAddr> HostAddr = SocketSub->CreateInternetAddr();
+
+#if ENGINE_MINOR_VERSION > 22
+	FAddressInfoResult GAIResult = SocketSub->GetAddressInfo(*HostName, nullptr, EAddressInfoFlags::Default, NAME_None);
+	if (GAIResult.Results.Num() > 0)
+	{
+		OutIp = GAIResult.Results[0].Address->ToString(false);
+		return true;
+	}
+
+	return false;
+
+#else
 	ESocketErrors HostResolveError = SocketSub->GetHostByName(TCHAR_TO_ANSI(*HostName), *HostAddr);
 	if (HostResolveError == SE_NO_ERROR || HostResolveError == SE_EWOULDBLOCK)
 	{
@@ -58,6 +75,7 @@ bool UJavascriptLibrary::ResolveIp(FString HostName, FString& OutIp)
 		return true;
 	}
 	return false;
+#endif
 }
 
 void UJavascriptLibrary::SetIp(FJavascriptInternetAddr& Addr, FString ResolvedAddress, bool& bValid)
@@ -308,6 +326,11 @@ FString UJavascriptLibrary::GetDir(UObject* Object, FString WhichDir)
 	else return TEXT("");
 }
 
+FString UJavascriptLibrary::ConvertRelativePathToFull(UObject* Object, FString RelativePath)
+{
+	return FPaths::ConvertRelativePathToFull(RelativePath);
+}
+
 bool UJavascriptLibrary::HasUndo(UEngine* Engine)
 {
 	return !!GUndo;
@@ -452,26 +475,23 @@ float UJavascriptLibrary::GetLastRenderTime(AActor* Actor)
 	return Actor->GetLastRenderTime();
 }
 
-UEnum* UJavascriptLibrary::CreateEnum(UObject* Outer, FName Name, TArray<FName> DisplayNames)
+UEnum* UJavascriptLibrary::CreateEnum(UObject* Outer, FName Name, TArray<FName> DisplayNames, const TArray<FString>& Flags)
 {
 	UEnum* Enum = NewObject<UEnum>(Outer,Name,RF_Public);
 
 	if (NULL != Enum)
 	{
-#if ENGINE_MINOR_VERSION > 14
 		TArray<TPair<FName, int64>> Names;
-#else
-		TArray<TPair<FName, uint8>> Names;
-#endif
-
 		int32 Index = 0;
+
+		bool IsBitFlags = Flags.Contains(TEXT("Bitflags"));
 
 		for (auto DisplayName : DisplayNames)
 		{
-			Names.Add(TPairInitializer<FName, uint8>(DisplayName, Index));
-			Index++;
+			Names.Add(TPairInitializer<FName, int64>(DisplayName, IsBitFlags ? 1 << Index++ : Index++));
 		}
 		Enum->SetEnums(Names, UEnum::ECppForm::Namespaced);
+		SetEnumFlags(Enum, Flags);
 	}
 
 	return Enum;
@@ -729,19 +749,41 @@ FJavascriptStat UJavascriptLibrary::NewStat(
 {
 	FJavascriptStat Out;
 #if STATS
-	Out.Instance = MakeShareable(new FJavascriptThreadSafeStaticStatBase);
-	Out.Instance->DoSetup(
-		InStatName.GetPlainANSIString(),
-		*InStatDesc, 
-		InGroupName.GetPlainANSIString(),
-		InGroupCategory.GetPlainANSIString(),
-		*InGroupDesc, 
-		bDefaultEnable, 
-		bShouldClearEveryFrame, 
-		(EStatDataType::Type)InStatType, 
-		bCycleStat, 
-		bSortByName,
-		FPlatformMemory::EMemoryCounterRegion::MCR_Invalid);
+#if ENGINE_MINOR_VERSION > 20
+    ANSICHAR StatName[NAME_SIZE];
+    ANSICHAR GroupName[NAME_SIZE];
+    ANSICHAR GroupCategoryName[NAME_SIZE];
+    InStatName.GetPlainANSIString(StatName);
+    InGroupName.GetPlainANSIString(GroupName);
+    InGroupCategory.GetPlainANSIString(GroupCategoryName);
+    Out.Instance = MakeShareable(new FJavascriptThreadSafeStaticStatBase);
+    Out.Instance->DoSetup(
+        StatName,
+        *InStatDesc, 
+        GroupName,
+        GroupCategoryName,
+        *InGroupDesc, 
+        bDefaultEnable, 
+        bShouldClearEveryFrame, 
+        (EStatDataType::Type)InStatType, 
+        bCycleStat, 
+        bSortByName,
+        FPlatformMemory::EMemoryCounterRegion::MCR_Invalid);
+#else
+    Out.Instance = MakeShareable(new FJavascriptThreadSafeStaticStatBase);
+    Out.Instance->DoSetup(
+        InStatName.GetPlainANSIString(),
+        *InStatDesc, 
+        InGroupName.GetPlainANSIString(),
+        InGroupCategory.GetPlainANSIString(),
+        *InGroupDesc, 
+        bDefaultEnable, 
+        bShouldClearEveryFrame, 
+        (EStatDataType::Type)InStatType, 
+        bCycleStat, 
+        bSortByName,
+        FPlatformMemory::EMemoryCounterRegion::MCR_Invalid);
+#endif
 #endif
 
 	return Out;
@@ -908,10 +950,4 @@ FText UJavascriptLibrary::UpdateLocalizationText(const FJavascriptText& JText, c
 #endif
 }
 
-/*
-bool UJavascriptLibrary::RemoveDisplayString(FJavascriptText& JavascriptText)
-{
-	auto DisplayString = FTextInspector::GetSharedDisplayString(JavascriptText.Handle);
-	return FTextLocalizationManager::Get().RemoveDisplayString(DisplayString);
-}
-*/
+PRAGMA_ENABLE_SHADOW_VARIABLE_WARNINGS

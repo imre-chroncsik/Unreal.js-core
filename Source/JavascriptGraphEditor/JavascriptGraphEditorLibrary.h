@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include "JavascriptUMG/JavascriptMenuLibrary.h"
 #include "SJavascriptGraphEdNode.h"
 #include "ConnectionDrawingPolicy.h"
 #include "EdGraph/EdGraph.h"
+#include "../../Launch/Resources/Version.h"
 #include "JavascriptGraphEditorLibrary.generated.h"
 
 class UEdGraph;
@@ -30,7 +31,7 @@ struct FJavascriptEdGraphPin
 {
 	GENERATED_BODY()
 
-	FJavascriptEdGraphPin() {}
+	FJavascriptEdGraphPin() : GraphPin(nullptr) {}
 	FJavascriptEdGraphPin(UEdGraphPin* InPin) 
 		: GraphPin(InPin) 
 	{}
@@ -38,6 +39,11 @@ struct FJavascriptEdGraphPin
 	UEdGraphPin* GraphPin;
 
 	operator UEdGraphPin* () const
+	{
+		return GraphPin;
+	}
+	UEdGraphPin* Get() const { return GraphPin; }
+	UEdGraphPin* operator->()
 	{
 		return GraphPin;
 	}
@@ -59,31 +65,31 @@ struct FJavascriptConnectionParams
 	FJavascriptConnectionParams(const FConnectionParams& In);
 
 	UPROPERTY()
-		FLinearColor WireColor;
+	FLinearColor WireColor;
 
 	UPROPERTY()
-		FJavascriptEdGraphPin AssociatedPin1;
+	FJavascriptEdGraphPin AssociatedPin1;
 
 	UPROPERTY()
-		FJavascriptEdGraphPin AssociatedPin2;
+	FJavascriptEdGraphPin AssociatedPin2;
 
 	UPROPERTY()
-		float WireThickness;
+	float WireThickness;
 
 	UPROPERTY()
-		bool bDrawBubbles;
+	bool bDrawBubbles;
 
 	UPROPERTY()
-		bool bUserFlag1;
+	bool bUserFlag1;
 
 	UPROPERTY()
-		bool bUserFlag2;
+	bool bUserFlag2;
 
 	UPROPERTY()
-		TEnumAsByte<EEdGraphPinDirection> StartDirection;
+	TEnumAsByte<EEdGraphPinDirection> StartDirection;
 
 	UPROPERTY()
-		TEnumAsByte<EEdGraphPinDirection> EndDirection;
+	TEnumAsByte<EEdGraphPinDirection> EndDirection;
 
 	operator FConnectionParams () const;
 };
@@ -94,7 +100,17 @@ struct FJavascriptDetermineLinkGeometryContainer
 	GENERATED_BODY()
 
 	FJavascriptDetermineLinkGeometryContainer() {}
-	FJavascriptDetermineLinkGeometryContainer(FArrangedChildren* InArrangedNodes, TSharedRef<SWidget>* InOutputPinWidget, TMap<UEdGraphNode*, int32>* InNodeWidgetMap, TMap<TSharedRef<SWidget>, FArrangedWidget>* InPinGeometries,	TMap< UEdGraphPin*, TSharedRef<SGraphPin> >* InPinToPinWidgetMap)
+	FJavascriptDetermineLinkGeometryContainer(
+		FArrangedChildren* InArrangedNodes, 
+		TSharedRef<SWidget>* InOutputPinWidget, 
+		TMap<UEdGraphNode*, int32>* InNodeWidgetMap, 
+		TMap<TSharedRef<SWidget>, FArrangedWidget>* InPinGeometries,
+#if ENGINE_MINOR_VERSION > 22
+		TMap< UEdGraphPin*, TSharedPtr<SGraphPin> >* InPinToPinWidgetMap
+#else
+		TMap< UEdGraphPin*, TSharedRef<SGraphPin> >* InPinToPinWidgetMap
+#endif
+	)
 		: ArrangedNodes(InArrangedNodes)
 		, OutputPinWidget(InOutputPinWidget)
 		, NodeWidgetMap(InNodeWidgetMap)
@@ -108,7 +124,11 @@ struct FJavascriptDetermineLinkGeometryContainer
 	TMap<UEdGraphNode*, int32>* NodeWidgetMap;
 
 	TMap<TSharedRef<SWidget>, FArrangedWidget>* PinGeometries;
+#if ENGINE_MINOR_VERSION > 22
+	TMap< UEdGraphPin*, TSharedPtr<SGraphPin> >* PinToPinWidgetMap;
+#else
 	TMap< UEdGraphPin*, TSharedRef<SGraphPin> >* PinToPinWidgetMap;
+#endif
 };
 
 USTRUCT(BlueprintType)
@@ -188,7 +208,7 @@ struct FJavascriptNodeCreator
 	UPROPERTY(BlueprintReadWrite, Category = "Javascript | Editor")
 	UJavascriptGraphEdNode* Node;
 
-	TSharedPtr<FGraphNodeCreator<UEdGraphNode>> Instance;
+	TSharedPtr<class IJavascriptGraphNodeCreator> Instance;
 };
 
 USTRUCT(BlueprintType)
@@ -212,6 +232,9 @@ class UJavascriptGraphEditorLibrary : public UBlueprintFunctionLibrary
 public:
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static FJavascriptNodeCreator NodeCreator(UJavascriptGraphEdGraph* Graph, bool bSelectNewNode = true);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static FJavascriptNodeCreator CustomNodeCreator(UJavascriptGraphEdGraph* Graph);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void Finalize(FJavascriptNodeCreator& Creator);
@@ -241,11 +264,14 @@ public:
 	static void SetPinType(FJavascriptEdGraphPin Pin, FEdGraphPinType PinType);
 	
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void SetPinContainerType(FJavascriptEdGraphPin A, EJavascriptPinContainerType::Type ContainerType);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static FJavascriptEdGraphPin FindPin(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection Direction);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static FName GetPinName(FJavascriptEdGraphPin A);
-	
+
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void SetPinInfo(FJavascriptEdGraphPin A, FName InPinName, FString InPinToolTip);
 
@@ -253,7 +279,25 @@ public:
 	static FGuid GetPinGUID(FJavascriptEdGraphPin A);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static int32 GetPinIndex(FJavascriptEdGraphPin A);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static FJavascriptEdGraphPin GetParentPin(FJavascriptEdGraphPin A);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static TArray<FJavascriptEdGraphPin> GetSubPins(FJavascriptEdGraphPin A);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void SetParentPin(FJavascriptEdGraphPin A, FJavascriptEdGraphPin Parent);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static bool IsValid(FJavascriptEdGraphPin A);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void SetPinHidden(FJavascriptEdGraphPin A, bool bHidden);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static bool IsPinHidden(FJavascriptEdGraphPin A);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static class UEdGraphNode* GetOwningNode(FJavascriptEdGraphPin A);
@@ -263,6 +307,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static TArray<FJavascriptEdGraphPin> GetLinkedTo(FJavascriptEdGraphPin A);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static int32 GetLinkedPinNum(FJavascriptEdGraphPin A);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static TArray<FJavascriptEdGraphPin> GetPins(UEdGraphNode* Node);
@@ -329,6 +376,22 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void ResizeNode(UEdGraphNode* Node, const FVector2D& NewSize);
+
+	// HACK: Accessing slate widget from UJavascriptGraphEdNode(or UEdGraphNode) is deprecated manner in UE4.
+	//       Implementation of UE4 uses UEdGraph::OnGraphChanged delegate to dispatch events to slate widgets,
+	//       but because Unreal.JS cannot provide customization of slate widgets, we cannot follow it.
+	//       Only what Unreal.JS can provide is a chance to generate customized widget
+	//       by using delegates of UJavascriptGraphAssetGraphSchema.
+	//       So we need another way to make UJavascriptGraphEdNode communicatable with slate widgets.
+	//       This is one of ways to do that, although not recommended.
+	//       * Currently, what we can do with this is only calling UJavascriptGraphEdCustomNodeWidget::SetGraphPanel.
+	//         Calling it with return value of this function will set the owner of that custom node widget.
+	//         It will help to simulate sub-node functionality although slate widget itself is still not customizable.
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static FJavascriptSlateWidget GetOwnerPanel(UJavascriptGraphEdNode* Node);
+
+private:
+	static TArray<FJavascriptEdGraphPin> TransformPins(const TArray<UEdGraphPin*>& Pins);
 };
 
 USTRUCT(BlueprintType)
