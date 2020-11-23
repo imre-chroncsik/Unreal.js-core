@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "JavascriptProfile.h"
@@ -7,6 +7,23 @@
 #include "IPAddress.h"
 #include "NavMesh/RecastNavMesh.h"
 #include "JavascriptLibrary.generated.h"
+
+USTRUCT(BlueprintType)
+struct FReadStringFromFileHandle
+{
+	GENERATED_BODY()
+
+	TSharedPtr<class FReadStringFromFileThread> Runnable;
+};
+
+USTRUCT(BlueprintType)
+struct FReadStringFromFileAsyncData
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString String;
+};
 
 USTRUCT(BlueprintType)
 struct V8_API FDirectoryItem
@@ -378,6 +395,9 @@ public:
 	static bool WriteFile(UObject* Object, FString Filename);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	static FReadStringFromFileHandle ReadStringFromFileAsync(UObject* Object, FString Filename, FJavascriptFunction Function);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static FString ReadStringFromFile(UObject* Object, FString Filename);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
@@ -409,6 +429,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
 	static void GetAllActorsOfClassAndTags(UObject* WorldContextObject, TSubclassOf<AActor> ActorClass, const TArray<FName>& Tags_Accept, const TArray<FName>& Tags_Deny, TArray<AActor*>& OutActors);
+
+	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
+	static void GetAllActorsOfClassAndTagsInCurrentLevel(UObject* WorldContextObject, TSubclassOf<AActor> ActorClass, const TArray<FName>& Tags_Accept, const TArray<FName>& Tags_Deny, TArray<AActor*>& OutActors);
 
 	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
 	static int32 GetCurrentProcessId();
@@ -595,14 +618,14 @@ public:
 
 	DECLARE_FUNCTION(execCallJS)
 	{
-		PARAM_PASSED_BY_VAL(Function, UStructProperty, FJavascriptFunction);
+		PARAM_PASSED_BY_VAL(Function, FStructProperty, FJavascriptFunction);
 
 		Stack.MostRecentPropertyAddress = nullptr;
 		Stack.MostRecentProperty = nullptr;
 
-		Stack.StepCompiledIn<UStructProperty>(NULL);
+		Stack.StepCompiledIn<FStructProperty>(NULL);
 		void* SrcStructAddr = Stack.MostRecentPropertyAddress;
-		auto SrcStructProperty = Cast<UStructProperty>(Stack.MostRecentProperty);
+		auto SrcStructProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
 
 		if (SrcStructAddr && SrcStructProperty)
 		{
@@ -611,4 +634,7 @@ public:
 
 		P_FINISH;
 	}
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static TArray<UActorComponent*> GetComponentsByClass(AActor* Actor, TSubclassOf<UActorComponent> ComponentClass);
 };

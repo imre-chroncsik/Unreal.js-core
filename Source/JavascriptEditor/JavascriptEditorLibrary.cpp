@@ -6,6 +6,7 @@
 #define WITH_KISSFFT 0
 #endif
 
+#include "JavascriptEditorModule.h"
 #include "AssetRegistryModule.h"
 #include "Editor/LandscapeEditor/Private/LandscapeEdModeTools.h"
 #include "JavascriptContext.h"
@@ -19,6 +20,8 @@
 #include "LevelEditor.h"
 #include "Editor/AnimationBlueprintEditor/Private/AnimationBlueprintEditorModule.h"
 #include "IAnimationEditorModule.h"
+#include "ISkeletalMeshEditorModule.h"
+#include "StaticMeshEditorModule.h"
 #include "BlueprintEditorModule.h"
 #include "Landscape.h"
 #include "LandscapeDataAccess.h"
@@ -31,13 +34,13 @@
 #include "Components/BrushComponent.h"
 
 #include "../../Launch/Resources/Version.h"
-#include "HAL/PlatformFileManager.h"
+#include "HAL/PlatformFilemanager.h"
 #include "HAL/FileManager.h"
 #include "AI/NavDataGenerator.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Engine/LevelStreaming.h"
 #include "VisualLogger/VisualLogger.h"
-#include "JavascriptUMG/JavascriptUICommands.h"
+#include "JavascriptUICommands.h"
 #include "WorkspaceMenuStructure.h"
 #include "WorkspaceMenuStructureModule.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -78,7 +81,7 @@ void UJavascriptEditorLibrary::SetHeightmapDataFromMemory(ULandscapeInfo* Landsc
 	{
 		FHeightmapAccessor<false> Accessor(LandscapeInfo);
 		Accessor.SetData(MinX, MinY, MaxX, MaxY, (uint16*)FArrayBufferAccessor::GetData());
-	}	
+	}
 }
 
 void UJavascriptEditorLibrary::GetHeightmapDataToMemory(ULandscapeInfo* LandscapeInfo, int32 MinX, int32 MinY, int32 MaxX, int32 MaxY)
@@ -151,7 +154,7 @@ void UJavascriptEditorLibrary::GetAlphamapDataToMemory(ULandscapeInfo* Landscape
 	}
 }
 
-bool UJavascriptEditorLibrary::GetLandscapeExtent(ULandscapeInfo* LandscapeInfo, int32& MinX, int32& MinY, int32& MaxX, int32& MaxY) 
+bool UJavascriptEditorLibrary::GetLandscapeExtent(ULandscapeInfo* LandscapeInfo, int32& MinX, int32& MinY, int32& MaxX, int32& MaxY)
 {
 	if (!LandscapeInfo) return false;
 
@@ -238,10 +241,36 @@ bool UJavascriptEditorLibrary::IsAssetLoaded(const FJavascriptAssetData& AssetDa
 
 bool UJavascriptEditorLibrary::EditorDestroyActor(UWorld* World, AActor* Actor, bool bShouldModifyLevel)
 {
-	if (World && Actor)
+	if (World && ::IsValid(Actor) && Actor->IsValidLowLevelFast())
 	{
-		return World->EditorDestroyActor(Actor, bShouldModifyLevel);
+		IJavascriptEditorModule* JSEditorModule = FModuleManager::GetModulePtr<IJavascriptEditorModule>("JavascriptEditor");
+
+		if (JSEditorModule)
+		{
+			UJavascriptContext* JSContext = JSEditorModule->GetJavascriptContext();
+
+			if (JSContext )
+			{
+				JSContext->RemoveObjectInJavacontext(Actor);
+			}
+		}
+
+		if (!(Actor->HasAnyFlags(RF_BeginDestroyed) || Actor->HasAnyFlags(RF_FinishDestroyed)))
+		{
+			return World->EditorDestroyActor(Actor, bShouldModifyLevel);
+		}
 	}
+	return false;
+}
+
+bool UJavascriptEditorLibrary::ConditionalBeginDestroybyUObject(UObject* TargetObject)
+{
+	if (::IsValid(TargetObject) && TargetObject->IsValidLowLevel())
+	{
+		TargetObject->ConditionalBeginDestroy();
+		return true;
+	}
+
 	return false;
 }
 
@@ -324,7 +353,7 @@ FJavascriptWorkspaceItem UJavascriptEditorLibrary::GetGroup(const FString& Name)
 	if (Name == TEXT("Root"))
 	{
 		Out.Handle = WorkspaceMenu::GetMenuStructure().GetStructureRoot();
-	} 
+	}
 	else if (Name == TEXT("DeveloperToolsMisc"))
 	{
 		Out.Handle = WorkspaceMenu::GetMenuStructure().GetDeveloperToolsMiscCategory();
@@ -434,7 +463,7 @@ void UJavascriptEditorLibrary::DrawDirectionalArrow(const FJavascriptPDI& PDI, c
 	::DrawDirectionalArrow(PDI.PDI, ArrowToWorld.ToMatrixWithScale(), InColor, Length, ArrowSize, DepthPriority, Thickness);
 }
 void UJavascriptEditorLibrary::DrawConnectedArrow(const FJavascriptPDI& PDI, const FTransform& ArrowToWorld, const FLinearColor& Color, float ArrowHeight, float ArrowWidth, ESceneDepthPriorityGroup DepthPriority, float Thickness, int32 NumSpokes)
-{	
+{
 	::DrawConnectedArrow(PDI.PDI, ArrowToWorld.ToMatrixWithScale(), Color, ArrowHeight, ArrowWidth, DepthPriority, Thickness, NumSpokes);
 }
 void UJavascriptEditorLibrary::DrawWireStar(const FJavascriptPDI& PDI, const FVector& Position, float Size, const FLinearColor& Color, ESceneDepthPriorityGroup DepthPriority)
@@ -462,9 +491,9 @@ void UJavascriptEditorLibrary::DrawPolygon(const FJavascriptPDI& PDI, const TArr
 
 	for (int32 Index = 0; Index < Verts.Num() - 2; ++Index)
 	{
-		MeshBuilder.AddTriangle(0, Index + 1, Index + 2);		
+		MeshBuilder.AddTriangle(0, Index + 1, Index + 2);
 	}
-	
+
 	static auto TransparentPlaneMaterialXY = (UMaterial*)StaticLoadObject(UMaterial::StaticClass(), NULL, TEXT("/Engine/EditorMaterials/WidgetVertexColorMaterial.WidgetVertexColorMaterial"), NULL, LOAD_None, NULL);
 #if ENGINE_MINOR_VERSION < 22
 	MeshBuilder.Draw(PDI.PDI, FMatrix::Identity, TransparentPlaneMaterialXY->GetRenderProxy(false), DepthPriority, 0.f);
@@ -478,7 +507,7 @@ struct HJavascriptHitProxy : public HHitProxy
 	DECLARE_HIT_PROXY(JAVASCRIPTEDITOR_API);
 
 	FName Name;
-	
+
 	HJavascriptHitProxy(FName InName) :
 		HHitProxy(HPP_UI),
 		Name(InName)
@@ -536,7 +565,7 @@ FName UJavascriptEditorLibrary::GetName(const FJavascriptHitProxy& Proxy)
 	if (Proxy.HitProxy && Proxy.HitProxy->IsA(HJavascriptHitProxy::StaticGetType()))
 	{
 		HJavascriptHitProxy* ActorHit = static_cast<HJavascriptHitProxy*>(Proxy.HitProxy);
-		return ActorHit->Name;		
+		return ActorHit->Name;
 	}
 
 	return FName();
@@ -573,6 +602,11 @@ FVector UJavascriptEditorLibrary::GetActorLocation(AActor* Actor)
 		return Actor->GetActorLocation();
 	}
 	return FVector::ZeroVector;
+}
+
+FRotator UJavascriptEditorLibrary::GetActorRotation(AActor* Actor)
+{
+	return IsValid(Actor) ? Actor->GetActorRotation() : FRotator::ZeroRotator;
 }
 
 bool UJavascriptEditorLibrary::IsActorLabelEditable(AActor* Actor)
@@ -664,6 +698,8 @@ static FName NAME_MaterialEditor("MaterialEditor");
 static FName NAME_AnimationBlueprintEditor("AnimationBlueprintEditor");
 static FName NAME_AnimationEditor("AnimationEditor");
 static FName NAME_BlueprintEditor("Kismet");
+static FName NAME_SkeletalMeshEditor("SkeletalMeshEditor");
+static FName NAME_StaticMeshEditor("StaticMeshEditor");
 
 FJavascriptExtensibilityManager UJavascriptEditorLibrary::GetMenuExtensibilityManager(FName What)
 {
@@ -712,6 +748,16 @@ FJavascriptExtensibilityManager UJavascriptEditorLibrary::GetToolBarExtensibilit
 		IAnimationEditorModule& AnimationEditor = FModuleManager::LoadModuleChecked<IAnimationEditorModule>(NAME_AnimationEditor);
 		return { AnimationEditor.GetToolBarExtensibilityManager() };
 	}
+	else if (What == NAME_SkeletalMeshEditor)
+	{
+		ISkeletalMeshEditorModule& SkeletalMeshEditor = FModuleManager::LoadModuleChecked<ISkeletalMeshEditorModule>(NAME_SkeletalMeshEditor);
+		return { SkeletalMeshEditor.GetToolBarExtensibilityManager() };
+	}
+	else if (What == NAME_StaticMeshEditor)
+	{
+		IStaticMeshEditorModule& StaticMeshEditor = FModuleManager::LoadModuleChecked<IStaticMeshEditorModule>(NAME_StaticMeshEditor);
+		return { StaticMeshEditor.GetToolBarExtensibilityManager() };
+	}
 	return FJavascriptExtensibilityManager();
 }
 
@@ -719,7 +765,7 @@ FJavascriptUICommandList UJavascriptEditorLibrary::GetLevelEditorActions()
 {
 	FLevelEditorModule& LevelEditor = FModuleManager::LoadModuleChecked<FLevelEditorModule>(NAME_LevelEditor);
 	TSharedRef<FUICommandList> LevelEditorActions = LevelEditor.GetGlobalLevelEditorActions();
-	
+
 	FJavascriptUICommandList CommandList;
 	CommandList.Handle = LevelEditorActions;
 	return CommandList;
@@ -772,10 +818,15 @@ void UJavascriptEditorLibrary::RemoveAllLazyExtender(FJavascriptExtensibilityMan
 
 bool UJavascriptEditorLibrary::SavePackage(UPackage* Package, FString FileName)
 {
+	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*FileName))
+	{
+		FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*FileName, false);
+	}
+
 	UWorld* World = UWorld::FindWorldInPackage(Package);
 	bool bSavedCorrectly;
 
-	if (World) 
+	if (World)
 	{
 		bSavedCorrectly = UPackage::SavePackage(Package, World, RF_NoFlags, *FileName, GError, NULL, false, true);
 	}
@@ -792,7 +843,7 @@ bool UJavascriptEditorLibrary::DeletePackage(UPackage* Package)
 	FString BasePackageFileName = FPackageName::LongPackageNameToFilename(PackageName);
 	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*BasePackageFileName))
 	{
-		return IFileManager::Get().Delete(*BasePackageFileName);
+		return IFileManager::Get().Delete(*BasePackageFileName, false, true);
 	}
 	return false;
 }
@@ -1049,7 +1100,7 @@ void UJavascriptEditorLibrary::OpenEditorForAssetByPath(const FString& AssetPath
 TArray<FAssetData> UJavascriptEditorLibrary::GetAssetsByType(const TArray<FString>& Types, bool bRecursiveClasses)
 {
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	
+
 	FARFilter Filter;
 	for (auto& Type : Types)
 	{
@@ -1190,7 +1241,7 @@ int32 UJavascriptEditorLibrary::ReplaceAnimNotifyClass(UAnimSequenceBase* Sequen
 
 #if !UE_SERVER
 
-static void WriteRawToTexture_RenderThread(FTexture2DDynamicResource* TextureResource, const TArray<uint8>& RawData, bool bUseSRGB = true)
+static void WriteRawToTexture_RenderThread(FTexture2DDynamicResource* TextureResource, const TArray64<uint8>& RawData, bool bUseSRGB = true)
 {
 	check(IsInRenderingThread());
 
@@ -1246,7 +1297,7 @@ bool UJavascriptEditorLibrary::LoadImageFromDiskAsync(const FString& ImagePath, 
 
 	if (ImageWrapper.IsValid() && ImageWrapper->SetCompressed(FileData.GetData(), FileData.Num()))
 	{
-		const TArray<uint8>* RawData = nullptr;
+		TArray64<uint8> RawData;
 		if (ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, RawData))
 		{
 			if (UTexture2DDynamic* Texture = UTexture2DDynamic::Create(ImageWrapper->GetWidth(), ImageWrapper->GetHeight()))
@@ -1263,7 +1314,7 @@ bool UJavascriptEditorLibrary::LoadImageFromDiskAsync(const FString& ImagePath, 
 					});
 #else
 				FTexture2DDynamicResource* TextureResource = static_cast<FTexture2DDynamicResource*>(Texture->Resource);
-				TArray<uint8> RawDataCopy = *RawData;
+				TArray64<uint8> RawDataCopy = RawData;
 				ENQUEUE_RENDER_COMMAND(FWriteRawDataToTexture)(
 					[TextureResource, RawDataCopy](FRHICommandListImmediate& RHICmdList)
 				{
@@ -1276,8 +1327,8 @@ bool UJavascriptEditorLibrary::LoadImageFromDiskAsync(const FString& ImagePath, 
 		}
 
 	}
-	
-	Callback->OnFail.Broadcast(nullptr);	
+
+	Callback->OnFail.Broadcast(nullptr);
 	return false;
 }
 
@@ -1292,19 +1343,43 @@ bool UJavascriptEditorLibrary::OpenFileDialog(const UJavascriptWindow* SubWindow
 		const void* ParentWindowWindowHandle = nullptr;
 		if (SubWindow)
 			ParentWindowWindowHandle = nullptr;
-		else			
+		else
 			ParentWindowWindowHandle = FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr);
-		
+
 		int OutFilterIndex = 0;
 		return DesktopPlatform->OpenFileDialog(
 			ParentWindowWindowHandle,
 			DialogTitle,
-			FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_IMPORT),
+			//FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_IMPORT),
+			DefaultPath,
 			TEXT(""),
 			FileTypes,
 			EFileDialogFlags::Type(Flags),
 			OutFilenames,
 			OutFilterIndex
+		);
+	}
+
+	return false;
+}
+
+bool UJavascriptEditorLibrary::OpenDirectoryDialog(const UJavascriptWindow* SubWindow, const FString& DialogTitle, const FString& DefaultPath, FString& OutFolderName)
+{
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (DesktopPlatform)
+	{
+		const void* ParentWindowWindowHandle = nullptr;
+		if (SubWindow)
+			ParentWindowWindowHandle = nullptr;
+		else
+			ParentWindowWindowHandle = FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr);
+
+		return DesktopPlatform->OpenDirectoryDialog(
+			ParentWindowWindowHandle,
+			DialogTitle,
+			//FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_IMPORT),
+			DefaultPath,
+			OutFolderName
 		);
 	}
 
@@ -1404,6 +1479,29 @@ bool UJavascriptEditorLibrary::GetIsExecuteTestModePIE()
 	}
 
 	return false;
+}
+
+int32 UJavascriptEditorLibrary::GetUniqueID(UObject * InObject)
+{
+	if (InObject != NULL)
+	{
+		return InObject->GetUniqueID();
+	}
+	else
+	{
+		return -1;
+	}
+}
+
+void UJavascriptEditorLibrary::SetActorLabelUnique(AActor* Actor, const FString& NewActorLabel, const TArray<FString>& InExistingActorLabels)
+{
+	FCachedActorLabels ActorLabels;
+	for (auto& ExistingActorLabel : InExistingActorLabels)
+	{
+		ActorLabels.Add(ExistingActorLabel);
+	}
+
+	FActorLabelUtilities::SetActorLabelUnique(Actor, NewActorLabel, &ActorLabels);
 }
 
 #endif
