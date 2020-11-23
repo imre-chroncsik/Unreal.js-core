@@ -366,6 +366,9 @@ public:
 
 	void OnWorldCleanup(UWorld* World, bool bSessionEnded, bool bCleanupResources)
 	{
+		if (World->IsGameWorld())
+			return;
+
 		for (auto It = ClassToFunctionTemplateMap.CreateIterator(); It; ++It)
 		{
 			UClass* Class = It.Key();
@@ -427,6 +430,7 @@ public:
 		Delegates = nullptr;
 
 		FTicker::GetCoreTicker().RemoveTicker(TickHandle);
+		FWorldDelegates::OnWorldCleanup.Remove(OnWorldCleanupHandle);
 		v8::debug::SetConsoleDelegate(isolate_, nullptr);
 
 		isolate_->Dispose();
@@ -1264,17 +1268,32 @@ public:
 #endif
 	}
 
+	template <typename T>
+	void BindFunction(FIsolateHelper I, Local<FunctionTemplate> Template, const char* name, T&& fn)
+	{
+		Template->PrototypeTemplate()->Set(I.Keyword(name), I.FunctionTemplate(FV8Exception::GuardLambda(fn)));
+	}
+
+	struct FunctionTemplateHelper
+	{
+		FIsolateHelper I;
+		Handle<FunctionTemplate> Template;
+
+		template <typename T>
+		void Set(const char* name, T&& fn)
+		{
+			Template->PrototypeTemplate()->Set(I.Keyword(name), I.FunctionTemplate(FV8Exception::GuardLambda(fn)));
+		}
+	};
+
 	void ExportMemory(Local<ObjectTemplate> global_templ)
 	{
 		FIsolateHelper I(isolate_);
 
 		Local<FunctionTemplate> Template = I.FunctionTemplate();
+		FunctionTemplateHelper FnHelper{ I, Template };
 
-		auto add_fn = [&](const char* name, FunctionCallback fn) {
-			Template->PrototypeTemplate()->Set(I.Keyword(name), I.FunctionTemplate(FV8Exception::GuardLambda(fn)));
-		};		
-
-		add_fn("access", [](const FunctionCallbackInfo<Value>& info)
+		FnHelper.Set("access", [](const FunctionCallbackInfo<Value>& info)
 		{
 			auto isolate = info.GetIsolate();
 
@@ -1297,7 +1316,7 @@ public:
 			I.Throw(TEXT("memory.fork requires JavascriptMemoryObject"));
 		});
 
-		add_fn("exec", [](const FunctionCallbackInfo<Value>& info)
+		FnHelper.Set("exec", [](const FunctionCallbackInfo<Value>& info)
 		{
 			auto isolate = info.GetIsolate();
 			FIsolateHelper I(isolate);
@@ -1324,7 +1343,7 @@ public:
 		});
 
 		// memory.bind
-		add_fn("bind", [](const FunctionCallbackInfo<Value>& info)
+		FnHelper.Set("bind", [](const FunctionCallbackInfo<Value>& info)
 		{
 			UE_LOG(Javascript, Warning, TEXT("memory.bind is deprecated. use memory.exec(ab,fn) instead."));
 			FIsolateHelper I(info.GetIsolate());
@@ -1344,7 +1363,7 @@ public:
 		});
 
 		// memory.unbind
-		add_fn("unbind", [](const FunctionCallbackInfo<Value>& info)
+		FnHelper.Set("unbind", [](const FunctionCallbackInfo<Value>& info)
 		{
 			FIsolateHelper I(info.GetIsolate());
 
@@ -1368,7 +1387,7 @@ public:
 		});
 
 		// console.void
-		add_fn("write", [](const FunctionCallbackInfo<Value>& info)
+		FnHelper.Set("write", [](const FunctionCallbackInfo<Value>& info)
 		{
 			auto isolate = info.GetIsolate();
 			FIsolateHelper I(isolate);
@@ -1400,7 +1419,7 @@ public:
 			info.GetReturnValue().Set(info.Holder());
 		});
 
-		add_fn("takeSnapshot", [](const FunctionCallbackInfo<Value>& info)
+		FnHelper.Set("takeSnapshot", [](const FunctionCallbackInfo<Value>& info)
 		{
 			auto isolate = info.GetIsolate();
 			FIsolateHelper I(isolate);
@@ -1699,7 +1718,7 @@ public:
 
 		auto function_name = I.Keyword(FunctionToExport->GetName());
 		auto function = I.FunctionTemplate(FV8Exception::GuardLambda(FunctionBody), FunctionToExport);
-		
+
 		// Register the function to prototype template
 		Template->PrototypeTemplate()->Set(function_name, function);
 	}
@@ -1879,7 +1898,7 @@ public:
 		};
 
 		Template->Set(I.Keyword("GetClassObject"), I.FunctionTemplate(FV8Exception::GuardLambda(fn), ClassToExport));
-	}	
+	}
 
 	void AddMemberFunction_Class_SetDefaultSubobjectClass(Local<FunctionTemplate> Template, UStruct* ClassToExport)
 	{
@@ -2948,9 +2967,13 @@ public:
 	void SetWeak(UniquePersistent<U>& Handle, T* GarbageCollectedObject)
 	{
 		typedef TPair<FJavascriptContext*, T*> WeakData;
+#if ENGINE_MINOR_VERSION < 26
 		typedef typename WeakData::KeyType WeakDataKeyInitType;
 		typedef typename WeakData::ValueType WeakDataValueInitType;
 		typedef TPairInitializer<WeakDataKeyInitType, WeakDataValueInitType> InitializerType;
+#else
+		typedef TPairInitializer<FJavascriptContext*, T*> InitializerType;
+#endif
 
 #if V8_MAJOR_VERSION == 5 && V8_MINOR_VERSION < 3
 		Handle.template SetWeak<WeakData>(new WeakData(InitializerType(GetContext(), GarbageCollectedObject)), [](const WeakCallbackData<U, WeakData>& data) {
