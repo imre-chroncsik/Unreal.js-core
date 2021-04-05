@@ -6,7 +6,6 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "JavascriptContext.h"
 #include "IV8.h"
 #include "SocketSubsystem.h"
-#include "GameFramework/GameMode.h"
 #include "Sockets.h"
 #include "NavigationSystem.h"
 #include "HAL/PlatformApplicationMisc.h"
@@ -231,9 +230,9 @@ UDynamicBlueprintBinding* UJavascriptLibrary::GetDynamicBinding(UClass* Outer, T
 	return nullptr;
 }
 
-void UJavascriptLibrary::HandleSeamlessTravelPlayer(AGameModeBase* GameMode, AController*& C)
-{
-	GameMode->HandleSeamlessTravelPlayer(C);
+void UJavascriptLibrary::HandleSeamlessTravelPlayer(AGameModeBase* GameMode, AController*& C)	
+{	
+	GameMode->HandleSeamlessTravelPlayer(C);	
 }
 
 void UJavascriptLibrary::SetRootComponent(AActor* Actor, USceneComponent* Component)
